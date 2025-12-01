@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Database
+data/*.db
+data/*.sqlite
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Sessions
+sessions/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Uploads (if they contain user data)
+Public/uploads/*
+!Public/uploads/.gitkeep
+
+# Build output (if any)
+dist/
+build/
+
+# Temporary files
+*.tmp
+*.temp

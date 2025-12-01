@@ -385,7 +385,7 @@ async function createDefaultRoles() {
       id: uuidv4(),
       name: 'admin',
       display_name: 'Administrator',
-      permissions: JSON.stringify(['dashboard', 'sales', 'messaging', 'products', 'customers', 'users', 'settings']),
+      permissions: JSON.stringify(['dashboard', 'crm', 'sales', 'messaging', 'products', 'customers', 'settings', 'reports', 'hrm']),
       description: 'Full system access',
       is_system: 1
     },
@@ -401,7 +401,7 @@ async function createDefaultRoles() {
       id: uuidv4(),
       name: 'user',
       display_name: 'User',
-      permissions: JSON.stringify(['dashboard', 'sales', 'messaging', 'settings']),
+      permissions: JSON.stringify(['dashboard', 'sales', 'messaging', 'customers']),
       description: 'Basic access to sales and messaging',
       is_system: 1
     }

@@ -43,7 +43,7 @@ const requiredFiles = {
     'routes/roles.routes.js'
   ],
   services: [
-    'services/userservice.js'
+    'services/userService.js'
   ],
   utils: [
     'utils/logger.js'

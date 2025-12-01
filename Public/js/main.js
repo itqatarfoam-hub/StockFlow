@@ -230,6 +230,8 @@ class StockFlowApp {
           return window.settingsPageModule ? settingsPageModule.render() : '<div class="card"><h2>Settings module not loaded</h2></div>';
         case 'crm':
           return window.crmDashboardModule ? crmDashboardModule.render(this) : '<div class="card"><h2>CRM module not loaded</h2></div>';
+        case 'hrm':
+          return window.hrmMainPageModule ? hrmMainPageModule.render(this) : '<div class="card"><h2>HRM module not loaded</h2></div>';
         case 'reports':
           return '<div class="card"><h2>📊 Reports</h2><p>Reports page coming soon...</p></div>';
         default:

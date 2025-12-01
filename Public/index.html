@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockFlow - Inventory Management System</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/css/hrm.css">
+</head>
+
+<body>
+    <div id="app">
+        <!-- App content will be rendered here -->
+    </div>
+
+    <!-- Core Utility Scripts (FIRST) -->
+    <script src="/js/utils.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/auth.js"></script>
+    <script src="/js/auto-logout.js"></script>
+
+    <!-- API Optimization Scripts -->
+    <script src="/js/api-cache.js"></script>
+    <script src="/js/api-retry.js"></script>
+
+    <!-- Data Management Scripts (API Modules) -->
+    <script src="/js/categories.js"></script>
+    <script src="/js/locations.js"></script>
+    <script src="/js/products.js"></script>
+    <script src="/js/customers.js"></script>
+    <script src="/js/sales.js"></script>
+    <script src="/js/users.js"></script>
+    <script src="/js/settings.js"></script>
+    <script src="/js/messaging.js"></script>
+    <script src="/js/notifications.js"></script>
+    <script src="/js/crm-company-registration.js"></script>
+    <script src="/js/crm-lead-forms.js"></script>
+
+    <!-- Main Submodules (NEW - Advanced Modular Architecture) -->
+    <script src="/js/mainsub/index.js"></script>
+
+    <!-- Components (BEFORE Main) -->
+    <script src="/js/components/ui.components.js"></script>
+    <script src="/js/components/form.handlers.js"></script>
+    <script src="/js/components/data.operations.js"></script>
+
+    <!-- Render Modules (BEFORE Main) -->
+    <script src="/js/Render/static.modals.render.js"></script>
+    <script src="/js/Render/modals.render.js"></script>
+    <script src="/js/Render/login.render.js"></script>
+    <script src="/js/Render/dashboard.render.js"></script>
+    <script src="/js/Render/products.render.js"></script>
+    <script src="/js/Render/customers.render.js"></script>
+    <script src="/js/Render/sales.render.js"></script>
+    <script src="/js/Render/messaging.render.js"></script>
+    <script src="/js/Render/settings.render.js"></script>
+    <script src="/js/Render/reports.render.js"></script>
+
+    <!-- Main Application -->
+    <script src="/js/main.js"></script>
+
+    <!-- Page Module Scripts (AFTER main.js) -->
+    <script src="/js/modules/dashboard.module.js"></script>
+
+    <!-- Role-Specific Dashboard Modules -->
+    <script src="/js/modules/dashboard.administrator.module.js"></script>
+    <script src="/js/modules/dashboard.manager.module.js"></script>
+    <script src="/js/modules/dashboard.user.module.js"></script>
+    <script src="/js/modules/dashboard.hr.module.js"></script>
+    <script src="/js/modules/dashboard.sales.module.js"></script>
+    <script src="/js/modules/dashboard.purchase.module.js"></script>
+    <script src="/js/modules/dashboard.store.module.js"></script>
+
+    <!-- Other Page Modules -->
+    <script src="/js/modules/products.module.js"></script>
+    <script src="/js/modules/customers.module.js"></script>
+    <script src="/js/modules/sales.module.js"></script>
+
+    <!-- CRM Modules -->
+    <script src="/js/modules/crm.dashboard.module.js"></script>
+    <script src="/js/modules/crm.approvals.module.js"></script>
+    <script src="/js/modules/crm.leads.module.js"></script>
+    <script src="/js/modules/crm.meetings.module.js"></script>
+
+    <!-- Other Modules -->
+    <script src="/js/modules/users.module.js"></script>
+    <script src="/js/modules/settings.module.js"></script>
+    <script src="/js/modules/menu-management.module.js"></script>
+    <script src="/js/modules/role-menu-permissions.module.js"></script>
+    <script src="/js/modules/messaging.module.js"></script>
+    <script src="/js/modules/chatUI.module.js"></script>
+    <script src="/js/modules/reports.module.js"></script>
+
+    <!-- HRM Modules (NEW) - Main module FIRST! -->
+    <script src="/js/modules/hrm.main.module.js"></script>
+    <script src="/js/modules/hrm.dashboard.module.js"></script>
+    <script src="/js/modules/hrm.employees.module.js"></script>
+    <script src="/js/modules/hrm.leave.module.js"></script>
+    <script src="/js/modules/hrm.attendance.module.js"></script>
+    <script src="/js/modules/hrm.reports.module.js"></script>
+    <script src="/js/modules/hrm.assets.module.js"></script>
+    <script src="/js/modules/hrm.additional.modules.js"></script>
+    <script src="/js/modules/hrm.reminders.module.js"></script>
+    <script src="/js/modules/hrm.employee-portal.module.js"></script>
+
+    <script>
+        // Initialize notifications module
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initialize after a short delay to ensure all modules are loaded
+            setTimeout(() => {
+                if (window.notificationsModule) {
+                    console.log('🔔 Initializing notifications module...');
+                    notificationsModule.init();
+                } else {
+                    console.error('❌ Notifications module not found!');
+                }
+            }, 500);
+        });
+    </script>
+</body>
+
+</html>

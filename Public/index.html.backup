@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockFlow - Inventory Management System</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+
+<body>
+    <div id="app">
+        <!-- App content will be rendered here -->
+    </div>
+
+    <!-- Core Utility Scripts (FIRST) -->
+    <script src="/js/utils.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/auth.js"></script>
+    <script src="/js/auto-logout.js"></script>
+
+    <!-- API Optimization Scripts -->
+    <script src="/js/api-cache.js"></script>
+    <script src="/js/api-retry.js"></script>
+
+    <!-- Data Management Scripts (API Modules) -->
+    <script src="/js/categories.js"></script>
+    <script src="/js/locations.js"></script>
+    <script src="/js/products.js"></script>
+    <script src="/js/customers.js"></script>
+    <script src="/js/sales.js"></script>
+    <script src="/js/users.js"></script>
+    <script src="/js/settings.js"></script>
+    <script src="/js/messaging.js"></script>
+    <script src="/js/notifications.js"></script>
+    <script src="/js/crm-company-registration.js"></script>
+    <script src="/js/crm-lead-forms.js"></script>
+
+    <!-- Main Application -->
+    <script src="/js/main.js"></script>
+
+    <!-- Page Module Scripts (AFTER main.js) -->
+    <script src="/js/modules/dashboard.module.js"></script>
+    <!-- Role-Specific Dashboard Modules -->
+    <script src="/js/modules/dashboard.administrator.module.js"></script>
+    <script src="/js/modules/dashboard.manager.module.js"></script>
+    <script src="/js/modules/dashboard.user.module.js"></script>
+    <script src="/js/modules/dashboard.hr.module.js"></script>
+    <script src="/js/modules/dashboard.sales.module.js"></script>
+    <script src="/js/modules/dashboard.purchase.module.js"></script>
+    <script src="/js/modules/dashboard.store.module.js"></script>
+    <!-- Other Page Modules -->
+    <script src="/js/modules/products.module.js"></script>
+    <script src="/js/modules/customers.module.js"></script>
+    <script src="/js/modules/sales.module.js"></script>
+    <!-- CRM Modules -->
+    document.addEventListener('DOMContentLoaded', () => {
+    // Wait for app to initialize
+    setTimeout(() => {
+    if (window.notificationsModule && window.app && window.app.currentUser) {
+    notificationsModule.init();
+    }
+    }, 1000);
+    });
+    </script>
+</body>
+
+</html>

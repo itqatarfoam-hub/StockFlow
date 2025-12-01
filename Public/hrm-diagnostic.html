@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HRM Routing Diagnostic Tool</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #f5f5f5;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .success {
+            color: #10b981;
+            font-weight: bold;
+        }
+
+        .error {
+            color: #ef4444;
+            font-weight: bold;
+        }
+
+        .warning {
+            color: #f59e0b;
+            font-weight: bold;
+        }
+
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        button:hover {
+            background: #2563eb;
+        }
+
+        pre {
+            background: #f3f4f6;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+
+        .status-item {
+            padding: 8px;
+            margin: 5px 0;
+            border-left: 4px solid #ddd;
+            background: #f9fafb;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🔍 HRM Routing Diagnostic Tool</h1>
+
+    <div class="test-section">
+        <h2>Step 1: Check if Files are Loaded</h2>
+        <button onclick="checkFileLoading()">Run File Check</button>
+        <div id="fileCheckResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Step 2: Check Routing Configuration</h2>
+        <button onclick="checkRouting()">Check Routing</button>
+        <div id="routingResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Step 3: Test HRM Navigation</h2>
+        <button onclick="testNavigation('hrm')">Test HRM Dashboard</button>
+        <button onclick="testNavigation('hr-employees')">Test Employees</button>
+        <button onclick="testNavigation('hr-leave')">Test Leave</button>
+        <div id="navigationResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Step 4: Console Logs</h2>
+        <div id="consoleLogs"></div>
+    </div>
+
+    <script>
+        // Capture console logs
+        const originalLog = console.log;
+        const logs = [];
+        console.log = function (...args) {
+            logs.push(args.join(' '));
+            originalLog.apply(console, args);
+            updateConsoleLogs();
+        };
+
+        function updateConsoleLogs() {
+            const div = document.getElementById('consoleLogs');
+            div.innerHTML = '<pre>' + logs.slice(-20).join('\n') + '</pre>';
+        }
+
+        function checkFileLoading() {
+            const result = document.getElementById('fileCheckResult');
+            let html = '<h3>File Loading Status:</h3>';
+
+            // Check CSS
+            html += '<div class="status-item">';
+            const hrmCSS = Array.from(document.styleSheets).some(s => s.href && s.href.includes('hrm.css'));
+            html += hrmCSS
+                ? '<span class="success">✓ hrm.css loaded</span>'
+                : '<span class="error">✗ hrm.css NOT loaded</span>';
+            html += '</div>';
+
+            // Check mainsub modules
+            const modules = {
+                'UIRenderer': window.UIRenderer,
+                'EventsManager': window.EventsManager,
+                'AuthHandler': window.AuthHandler,
+                'DataLoaders': window.DataLoaders,
+                'StockFlowUtils': window.StockFlowUtils
+            };
+
+            Object.entries(modules).forEach(([name, module]) => {
+                html += '<div class="status-item">';
+                html += module
+                    ? `<span class="success">✓ ${name} available</span>`
+                    : `<span class="error">✗ ${name} NOT available</span>`;
+                html += '</div>';
+            });
+
+            // Check HRM modules
+            const hrmModules = {
+                'hrmDashboardModule': window.hrmDashboardModule,
+                'hrmEmployeesModule': window.hrmEmployeesModule,
+                'hrmLeaveModule': window.hrmLeaveModule,
+                'hrmAttendanceModule': window.hrmAttendanceModule,
+                'hrmReportsModule': window.hrmReportsModule,
+                'hrmAssetsModule': window.hrmAssetsModule,
+                'hrmVehiclesModule': window.hrmVehiclesModule,
+                'hrmDocumentsModule': window.hrmDocumentsModule,
+                'hrmPayrollModule': window.hrmPayrollModule,
+                'hrmRemindersModule': window.hrmRemindersModule,
+                'hrmEmployeeDashboardModule': window.hrmEmployeeDashboardModule
+            };
+
+            Object.entries(hrmModules).forEach(([name, module]) => {
+                html += '<div class="status-item">';
+                html += module
+                    ? `<span class="success">✓ ${name} loaded</span>`
+                    : `<span class="error">✗ ${name} NOT loaded</span>`;
+                html += '</div>';
+            });
+
+            result.innerHTML = html;
+        }
+
+        function checkRouting() {
+            const result = document.getElementById('routingResult');
+            let html = '<h3>Routing Configuration:</h3>';
+
+            if (!window.UIRenderer) {
+                html += '<p class="error">UIRenderer not found!</p>';
+                result.innerHTML = html;
+                return;
+            }
+
+            // Test if routing works
+            const testApp = { currentPage: 'hrm' };
+
+            try {
+                const content = UIRenderer.getPageContent(testApp);
+
+                html += '<div class="status-item">';
+                if (content.includes('page not found')) {
+                    html += '<span class="error">✗ HRM route returns "page not found"</span>';
+                } else if (content.includes('HRM Dashboard module not loaded')) {
+                    html += '<span class="warning">⚠ HRM route works but module not loaded</span>';
+                } else {
+                    html += '<span class="success">✓ HRM routing works correctly</span>';
+                }
+                html += '</div>';
+
+                html += '<h4>Sample Output:</h4>';
+                html += '<pre>' + content.substring(0, 300) + '...</pre>';
+            } catch (error) {
+                html += '<p class="error">Error testing routing: ' + error.message + '</p>';
+            }
+
+            result.innerHTML = html;
+        }
+
+        function testNavigation(page) {
+            const result = document.getElementById('navigationResult');
+            result.innerHTML = `<p>Testing navigation to: <strong>${page}</strong></p>`;
+
+            if (!window.UIRenderer) {
+                result.innerHTML += '<p class="error">UIRenderer not available!</p>';
+                return;
+            }
+
+            const testApp = { currentPage: page };
+            const content = UIRenderer.getPageContent(testApp);
+
+            let status = '';
+            if (content.includes('page not found')) {
+                status = '<span class="error">✗ FAILED - Returns "page not found"</span>';
+            } else if (content.includes('module not loaded')) {
+                status = '<span class="warning">⚠ PARTIAL - Route works but module missing</span>';
+            } else {
+                status = '<span class="success">✓ SUCCESS - Page loads correctly</span>';
+            }
+
+            result.innerHTML += `<div class="status-item">${status}</div>`;
+            result.innerHTML += '<h4>Content Preview:</h4>';
+            result.innerHTML += '<pre>' + content.substring(0, 500) + '</pre>';
+        }
+
+        // Auto-run checks on load
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                checkFileLoading();
+                checkRouting();
+            }, 1000);
+        });
+    </script>
+</body>
+
+</html>

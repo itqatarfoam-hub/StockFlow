@@ -1,0 +1,3908 @@
+// ============================================
+// STOCKFLOW - MAIN APPLICATION (COMPLETE FIXED)
+// Author: itqatarfoam-hub
+// Date: 2025-11-23 05:45:33 UTC
+// ============================================
+
+class StockFlowApp {
+  constructor() {
+    console.log('🚀 StockFlow initializing...');
+    console.log('📅 Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted):', new Date().toISOString().replace('T', ' ').substring(0, 19));
+    console.log("👤 Current user's login:", 'itqatarfoam-hub');
+
+    this.currentUser = null;
+    this.currentPage = 'login';
+    this.products = [];
+    this.categories = [];
+    this.customers = [];
+    this.sales = [];
+    this.users = [];
+    this.roles = [];
+    this.editingProductId = null;
+    this.editingCustomerId = null;
+    this.editingUserId = null;
+    this.editingCategoryId = null;
+    this.editingRoleId = null;
+    this.currentSaleItems = [];
+
+    console.log('✅ StockFlowApp initialized');
+
+    // Role-based access
+    this.roleAccessConfig = {
+      admin: ['dashboard', 'sales', 'messaging', 'products', 'customers', 'users', 'settings'],
+      manager: ['dashboard', 'sales', 'messaging', 'products', 'customers', 'settings'],
+      user: ['dashboard', 'sales', 'messaging', 'settings']
+    };
+
+    this.init();
+  }
+
+  // ========== INITIALIZATION ==========
+  async init() {
+    await this.checkAuth();
+    await this.render();
+    this.attachGlobalListeners();
+  }
+
+  async checkAuth() {
+    const result = await authModule.checkAuth();
+
+    if (result.authenticated) {
+      this.currentUser = result.user;
+      this.currentPage = 'dashboard';
+      console.log('✅ Authenticated as:', this.currentUser.username);
+
+      // Load role configuration to ensure menu and permissions are correct
+      await this.loadRoleConfig();
+    } else {
+      this.currentPage = 'login';
+      console.log('❌ Not authenticated - showing login page');
+    }
+  }
+
+  async loadInitialData() {
+    try {
+      console.log('📦 Loading products, categories, and customers...');
+
+      // Load data in parallel
+      const [products, categories, customers] = await Promise.all([
+        this.loadProducts(),
+        this.loadCategories(),
+        this.loadCustomers()
+      ]);
+
+      console.log(`✅ Loaded: ${this.products.length} products, ${this.categories.length} categories, ${this.customers.length} customers`);
+
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to load initial data:', error);
+      return false;
+    }
+  }
+
+  async loadProducts() {
+    try {
+      this.products = await productsModule.loadProducts();
+      console.log(`✅ Loaded ${this.products.length} products`);
+      return this.products;
+    } catch (error) {
+      console.error('❌ Error loading products:', error);
+      this.products = [];
+      return [];
+    }
+  }
+
+  async loadCategories() {
+    try {
+      this.categories = await categoriesModule.loadCategories();
+      console.log(`✅ Loaded ${this.categories.length} categories`);
+      return this.categories;
+    } catch (error) {
+      console.error('❌ Error loading categories:', error);
+      this.categories = [];
+      return [];
+    }
+  }
+
+  async loadCustomers() {
+    try {
+      this.customers = await customersModule.loadCustomers();
+      console.log(`✅ Loaded ${this.customers.length} customers`);
+      return this.customers;
+    } catch (error) {
+      console.error('❌ Error loading customers:', error);
+      this.customers = [];
+      return [];
+    }
+  }
+
+  // ========== LOAD ROLE CONFIGURATION ==========
+  async loadRoleConfig() {
+    try {
+      console.log('📡 Fetching role configurations from database...');
+
+      const response = await fetch('/api/roles', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        console.error('❌ Failed to load role config:', response.status);
+        // Keep the default configuration if API fails
+        return;
+      }
+
+      const data = await response.json();
+
+      if (!data.roles || !Array.isArray(data.roles)) {
+        console.error('❌ Invalid role data received');
+        return;
+      }
+
+      console.log('✅ Received', data.roles.length, 'roles from database');
+
+      // Build roleAccessConfig from database roles
+      const newConfig = {};
+
+      data.roles.forEach(role => {
+        const permissions = Array.isArray(role.permissions)
+          ? role.permissions
+          : (typeof role.permissions === 'string' ? JSON.parse(role.permissions) : []);
+
+        newConfig[role.name] = permissions;
+        console.log(`  📋 ${role.name}:`, permissions);
+      });
+
+      // Update the role access configuration
+      this.roleAccessConfig = newConfig;
+
+      console.log('✅ Role configuration updated successfully');
+
+    } catch (error) {
+      console.error('❌ Error loading role config:', error);
+      // Keep the default configuration if there's an error
+    }
+  }
+
+  // ========== RENDERING ==========
+  async render() {
+    const appDiv = document.getElementById('app');
+    if (!appDiv) {
+      console.error('❌ App div not found');
+      return;
+    }
+
+    let content = '';
+
+    if (this.currentPage === 'login') {
+      console.log('🎨 Rendering login page');
+      content = await this.renderLoginPage();
+    } else {
+      console.log('🎨 Rendering dashboard layout for page:', this.currentPage);
+      // Dashboard layout with sidebar + main content
+      content = `
+        <div class="dashboard-container">
+          ${this.renderSidebar()}
+          <div class="main-content">
+            ${this.renderTopbar()}
+            <div class="page-container" id="pageContent">
+              ${this.getPageContent()}
+            </div>
+          </div>
+          ${this.renderModals()}
+        </div>
+      `;
+    }
+
+    appDiv.innerHTML = content;
+    console.log('✅ Rendered page:', this.currentPage);
+
+    // Log menu items AFTER rendering
+    setTimeout(() => {
+      const menuItems = document.querySelectorAll('.sidebar-menu-item');
+      console.log('🔍 Menu items after render:', menuItems.length);
+      menuItems.forEach((item, i) => {
+        console.log(`  ${i + 1}. ${item.dataset.page} - ${item.textContent.trim()}`);
+      });
+    }, 50);
+  } // ← FIXED: Properly closes render() method
+
+  getPageContent() {
+    console.log('📄 Getting content for page:', this.currentPage);
+
+    try {
+      switch (this.currentPage) {
+        case 'dashboard':
+          return window.dashboardModule ? dashboardModule.render() : '<div class="card"><h2>Dashboard module not loaded</h2></div>';
+        case 'products':
+          return window.productsPageModule ? productsPageModule.render(this) : '<div class="card"><h2>Products module not loaded</h2></div>';
+        case 'customers':
+          return window.customersPageModule ? customersPageModule.render(this) : '<div class="card"><h2>Customers module not loaded</h2></div>';
+        case 'sales':
+          return window.salesPageModule ? salesPageModule.render(this) : '<div class="card"><h2>Sales module not loaded</h2></div>';
+        case 'messaging':
+          return window.messagingPageModule ? messagingPageModule.render(this) : '<div class="card"><h2>Messaging module not loaded</h2></div>';
+        case 'users':
+          return window.usersPageModule ? usersPageModule.render(this) : '<div class="card"><h2>Users module not loaded</h2></div>';
+        case 'settings':
+          return window.settingsPageModule ? settingsPageModule.render() : '<div class="card"><h2>Settings module not loaded</h2></div>';
+        default:
+          return '<div style="padding: 40px; text-align: center;"><h2>Page not found</h2></div>';
+      }
+    } catch (error) {
+      console.error('❌ Error getting page content:', error);
+      return `<div class="card"><h2>Error loading page</h2><p>${error.message}</p></div>`;
+    }
+  }
+  // ========== SIDEBAR ==========
+  // ========== SIDEBAR ==========
+  renderSidebar() {
+    const user = this.currentUser || {};
+    const role = user.role || 'user';
+
+    console.log('🎨 Rendering sidebar for role:', role);
+    console.log('📋 Role config:', this.roleAccessConfig);
+
+    // Get allowed pages for this role
+    const allowedPages = this.roleAccessConfig[role] || this.roleAccessConfig['user'] || [];
+    console.log('✅ Allowed pages:', allowedPages);
+
+    // Define all possible menu items with their permissions
+    const menuItems = [
+      {
+        page: 'dashboard',
+        icon: '📊',
+        label: 'Dashboard',
+        permission: 'dashboard'
+      },
+      {
+        page: 'sales',
+        icon: '💰',
+        label: 'Sales',
+        permission: 'sales'
+      },
+      {
+        page: 'messaging',
+        icon: '💬',
+        label: 'Messaging',
+        permission: 'messaging'
+      },
+      {
+        page: 'products',
+        icon: '📦',
+        label: 'Item Management',
+        permission: 'products'
+      },
+      {
+        page: 'customers',
+        icon: '👥',
+        label: 'Customers',
+        permission: 'customers'
+      },
+      {
+        page: 'users',
+        icon: '👤',
+        label: 'User Management',
+        permission: 'users'
+      },
+      {
+        page: 'settings',
+        icon: '⚙️',
+        label: 'Settings',
+        permission: 'settings'
+      }
+    ];
+
+    // Filter menu items based on permissions
+    const visibleMenuItems = menuItems.filter(item => {
+      const hasAccess = allowedPages.includes(item.permission);
+      console.log(`  ${item.label}: ${hasAccess ? '✓ SHOW' : '✗ HIDE'}`);
+      return hasAccess;
+    });
+
+    console.log('✅ Visible menu items:', visibleMenuItems.length);
+
+    // Generate menu HTML
+    const menuHTML = visibleMenuItems.map(item => `
+      <a href="#" class="sidebar-menu-item ${this.currentPage === item.page ? 'active' : ''}" data-page="${item.page}">
+        <span>${item.icon}</span>
+        <span>${item.label}</span>
+      </a>
+    `).join('');
+
+    return `
+      <div class="sidebar">
+        <div class="sidebar-logo">
+          <div class="sidebar-logo-badge">SF</div>
+          <div class="sidebar-logo-text">
+            <h2>StockFlow</h2>
+            <p>Inventory System</p>
+          </div>
+        </div>
+
+        <div class="sidebar-menu">
+          ${menuHTML}
+        </div>
+
+        <button class="sidebar-logout" id="logoutBtn">
+          <span>🚪</span>
+          <span>Logout</span>
+        </button>
+      </div>
+    `;
+  }
+
+
+  // ========== TOPBAR ==========
+  renderTopbar() {
+    const user = this.currentUser || {};
+    const now = new Date();
+
+    const dateOptions = {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    };
+    const formattedDate = now.toLocaleDateString('en-US', dateOptions);
+
+    const pageTitles = {
+      'dashboard': '📊 Dashboard',
+      'products': '📦 Item Management',
+      'customers': '👥 Customers',
+      'sales': '💰 Sales',
+      'messaging': '💬 Messaging',
+      'users': '👤 User Management',
+      'settings': '⚙️ Settings'
+    };
+
+    const pageTitle = pageTitles[this.currentPage] || 'StockFlow';
+
+    return `
+      <div class="topbar">
+        <div class="topbar-left">
+          <h1>${pageTitle}</h1>
+        </div>
+        <div class="topbar-right">
+          <div class="topbar-username">${user.username || 'User'} <span style="color: #6b7280; font-size: 11px;">| ${(user.role || 'user').toUpperCase()}</span></div>
+          <div class="topbar-date">${formattedDate}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ========== LOGIN PAGE ==========
+  async renderLoginPage() {
+    try {
+      const settings = await settingsModule.loadLoginSettings();
+
+      return `
+        <div class="login-container">
+          <div class="login-card">
+            <div class="login-header">
+              <div class="login-logo">${settings.logo || '📊'}</div>
+              <div class="login-title">${settings.title || 'StockFlow'}</div>
+              <div class="login-subtitle">${settings.subtitle || 'Inventory & Sales Management'}</div>
+            </div>
+
+            <form id="loginForm" class="login-form">
+              <div id="loginErrorMsg" class="error-message" style="display: none;"></div>
+
+              <div class="form-group">
+                <label class="form-label">Username</label>
+                <input type="text" id="loginUsername" class="form-input" placeholder="Enter username" required autofocus>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="password" id="loginPassword" class="form-input" placeholder="Enter password" required>
+              </div>
+
+              <button type="submit" class="form-button">Login</button>
+            </form>
+
+            <div class="demo-credentials">
+              <p>${settings.demo_label || 'Demo Credentials'}</p>
+              <p style="margin-top: 8px; font-weight: 600;">Username: <strong>admin</strong> | Password: <strong>admin123</strong></p>
+            </div>
+          </div>
+        </div>
+      `;
+    } catch (error) {
+      console.error('Failed to load login settings:', error);
+      return `
+        <div class="login-container">
+          <div class="login-card">
+            <div class="login-header">
+              <div class="login-logo">📊</div>
+              <div class="login-title">StockFlow</div>
+              <div class="login-subtitle">Inventory & Sales Management</div>
+            </div>
+
+            <form id="loginForm" class="login-form">
+              <div id="loginErrorMsg" class="error-message" style="display: none;"></div>
+
+              <div class="form-group">
+                <label class="form-label">Username</label>
+                <input type="text" id="loginUsername" class="form-input" placeholder="Enter username" required autofocus>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="password" id="loginPassword" class="form-input" placeholder="Enter password" required>
+              </div>
+
+              <button type="submit" class="form-button">Login</button>
+            </form>
+
+            <div class="demo-credentials">
+              <p>Demo Credentials</p>
+              <p style="margin-top: 8px; font-weight: 600;">Username: <strong>admin</strong> | Password: <strong>admin123</strong></p>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  async handleLogin(e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    console.log('🔐 ========== LOGIN START ==========');
+
+    const username = document.getElementById('loginUsername')?.value.trim();
+    const password = document.getElementById('loginPassword')?.value.trim();
+
+    ui.hideError('loginErrorMsg');
+
+    if (!username || !password) {
+      console.error('❌ Missing credentials');
+      ui.showError('loginErrorMsg', 'Please enter username and password');
+      return;
+    }
+
+    try {
+      const result = await authModule.login(username, password);
+
+      if (!result.success) {
+        console.error('❌ Login failed:', result.error);
+        ui.showError('loginErrorMsg', result.error);
+        return;
+      }
+
+      console.log('✅ Login successful for:', username);
+      this.currentUser = result.user;
+      this.currentPage = 'dashboard';
+
+      // Clear old data
+      this.products = [];
+      this.categories = [];
+      this.customers = [];
+      this.sales = [];
+      this.users = [];
+
+      console.log('📦 Loading initial data...');
+      await this.loadInitialData();
+
+      // ⭐ CRITICAL: Load role configuration BEFORE rendering
+      console.log('🔐 Loading role configuration...');
+      await this.loadRoleConfig();
+      console.log('✅ Role config loaded for role:', this.currentUser.role);
+      console.log('📋 Allowed pages:', this.roleAccessConfig[this.currentUser.role]);
+
+      console.log('🎨 Rendering dashboard...');
+      await this.render();
+
+      console.log('🔗 Attaching listeners...');
+      this.attachGlobalListeners();
+      this.attachPageSpecificListeners();
+
+      console.log('✅ Login complete!');
+      console.log('🔐 ========== LOGIN COMPLETE ==========\n');
+
+    } catch (error) {
+      console.error('❌ Login error:', error);
+      ui.showError('loginErrorMsg', 'An error occurred. Please try again.');
+    }
+  }
+
+  async handleLogout() {
+    await authModule.logout();
+    this.currentUser = null;
+    this.currentPage = 'login';
+    await this.render();
+    this.attachGlobalListeners();
+  }
+
+  // ========== ROLE-BASED ACCESS ==========
+  hasAccessToPage(page) {
+    const userRole = this.currentUser?.role || 'user';
+    const allowedPages = this.roleAccessConfig[userRole] || this.roleAccessConfig.user;
+    return allowedPages.includes(page);
+  }
+
+  // ========== MODALS ==========
+  renderModals() {
+    return `
+      <!-- Confirm Modal -->
+      <div id="confirmModal" class="modal">
+        <div class="modal-content" style="max-width: 400px;">
+          <h3 class="modal-header" id="confirmTitle">Confirm Action</h3>
+          <p id="confirmMessage" style="color: #6b7280; margin: 0 0 24px 0; font-size: 14px; white-space: pre-line;"></p>
+          <div class="form-button-group">
+            <button type="button" class="btn-secondary" id="confirmNo">Cancel</button>
+            <button type="button" class="btn-primary" id="confirmYes">Confirm</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stock Update Modal -->
+      <div id="stockModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+          <h3 class="modal-header">📦 Update Stock</h3>
+          <form id="stockForm">
+            <div class="form-group">
+              <label class="form-label">Product ID</label>
+              <input type="text" id="stockProductId" class="form-input" readonly style="background: #f3f4f6;">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Product Name</label>
+              <input type="text" id="stockProductName" class="form-input" readonly style="background: #f3f4f6;">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Category</label>
+              <input type="text" id="stockProductCategory" class="form-input" readonly style="background: #f3f4f6;">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Current Stock</label>
+              <input type="text" id="stockCurrent" class="form-input" readonly style="background: #f3f4f6; font-weight: bold;">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Quantity Change *</label>
+              <input type="number" id="stockNewQuantity" class="form-input" placeholder="Enter quantity (use - for reduction)" required>
+              <p style="margin: 4px 0 0 0; font-size: 11px; color: #6b7280;">Positive to add, negative to remove (e.g. -5)</p>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Update Date *</label>
+              <input type="date" id="stockUpdateDate" class="form-input" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Notes (Optional)</label>
+              <textarea id="stockNotes" class="form-textarea" placeholder="Reason for update..."></textarea>
+            </div>
+            
+            <div class="error-message-box" id="stockErrorMsg"></div>
+
+            <div class="form-button-group">
+              <button type="submit" class="btn-primary">Update Stock</button>
+              <button type="button" class="btn-secondary" onclick="window.app.closeStockModal()">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+<!-- Create Role Modal -->
+      <div id="createRoleModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+          <h3 class="modal-header">🔐 Create New Role</h3>
+          <form id="createRoleForm">
+            <div class="form-group">
+              <label class="form-label">Role Name * (lowercase, no spaces)</label>
+              <input type="text" id="roleName" class="form-input" placeholder="e.g., sales_manager" required pattern="[a-z_]+" maxlength="50">
+              <p style="margin: 4px 0 0 0; font-size: 11px; color: #6b7280;">Use lowercase letters and underscores only</p>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Display Name *</label>
+              <input type="text" id="roleDisplayName" class="form-input" placeholder="e.g., Sales Manager" required maxlength="100">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Description</label>
+              <textarea id="roleDescription" class="form-textarea" placeholder="Describe this role's responsibilities..." style="min-height: 60px;" maxlength="200"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Menu Permissions * (Select at least one)</label>
+              <div style="background: #f9fafb; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb;">
+                <label style="display: flex; align-items: center; padding: 10px; margin-bottom: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='transparent'">
+                  <input type="checkbox" name="role_permissions" value="dashboard" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+                  <span style="font-size: 20px; margin-right: 8px;">📊</span>
+                  <div>
+                    <p style="margin: 0; font-weight: 600; font-size: 14px; color: #1f2937;">Dashboard</p>
+                    <p style="margin: 0; font-size: 12px; color: #6b7280;">View statistics and overview</p>
+                  </div>
+                </label>
+
+                <label style="display: flex; align-items: center; padding: 10px; margin-bottom: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='transparent'">
+                  <input type="checkbox" name="role_permissions" value="sales" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+                  <span style="font-size: 20px; margin-right: 8px;">💰</span>
+                  <div>
+                    <p style="margin: 0; font-weight: 600; font-size: 14px; color: #1f2937;">Sales</p>
+                    <p style="margin: 0; font-size: 12px; color: #6b7280;">Create and manage sales transactions</p>
+                  </div>
+                </label>
+
+                <label style="display: flex; align-items: center; padding: 10px; margin-bottom: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='transparent'">
+                  <input type="checkbox" name="role_permissions" value="messaging" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+                  <span style="font-size: 20px; margin-right: 8px;">💬</span>
+                  <div>
+                    <p style="margin: 0; font-weight: 600; font-size: 14px; color: #1f2937;">Messaging</p>
+                    <p style="margin: 0; font-size: 12px; color: #6b7280;">Chat with team members</p>
+                  </div>
+                </label>
+
+                <label style="display: flex; align-items: center; padding: 10px; margin-bottom: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='transparent'">
+                  <input type="checkbox" name="role_permissions" value="products" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+                  <span style="font-size: 20px; margin-right: 8px;">📦</span>
+                  <div>
+                    <p style="margin: 0; font-weight: 600; font-size: 14px; color: #1f2937;">Item Management</p>
+                    <p style="margin: 0; font-size: 12px; color: #6b7280;">Manage products and inventory</p>
+                  </div>
+                </label>
+
+                <label style="display: flex; align-items: center; padding: 10px; margin-bottom: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='transparent'">
+                  <input type="checkbox" name="role_permissions" value="customers" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+                  <span style="font-size: 20px; margin-right: 8px;">👥</span>
+                  <div>
+                    <p style="margin: 0; font-weight: 600; font-size: 14px; color: #1f2937;">Customers</p>
+                    <p style="margin: 0; font-size: 12px; color: #6b7280;">Manage customer information</p>
+                  </div>
+                </label>
+
+                <label style="display: flex; align-items: center; padding: 10px; margin-bottom: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='transparent'">
+                  <input type="checkbox" name="role_permissions" value="users" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+                  <span style="font-size: 20px; margin-right: 8px;">👤</span>
+                  <div>
+                    <p style="margin: 0; font-weight: 600; font-size: 14px; color: #1f2937;">User Management</p>
+                    <p style="margin: 0; font-size: 12px; color: #6b7280;">Manage users and roles</p>
+                  </div>
+                </label>
+
+                <label style="display: flex; align-items: center; padding: 10px; border-radius: 6px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='transparent'">
+                  <input type="checkbox" name="role_permissions" value="settings" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+                  <span style="font-size: 20px; margin-right: 8px;">⚙️</span>
+                  <div>
+                    <p style="margin: 0; font-weight: 600; font-size: 14px; color: #1f2937;">Settings</p>
+                    <p style="margin: 0; font-size: 12px; color: #6b7280;">Configure system settings</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div class="error-message-box" id="createRoleErrorMsg" style="font-size: 12px; margin-bottom: 12px;"></div>
+
+            <div class="form-button-group">
+              <button type="submit" class="btn-primary">✓ Create Role</button>
+              <button type="button" class="btn-secondary" onclick="window.app.closeCreateRoleModal()">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Edit Role Modal -->
+      <div id="editRoleModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+          <h3 class="modal-header">✏️ Edit Role Permissions</h3>
+          <form id="editRoleForm">
+            <input type="hidden" id="editRoleId">
+            
+            <div class="form-group">
+              <label class="form-label">Role Name</label>
+              <input type="text" id="editRoleName" class="form-input" readonly style="background: #f3f4f6;">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Display Name *</label>
+              <input type="text" id="editRoleDisplayName" class="form-input" placeholder="e.g., Sales Manager" required maxlength="100">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Description</label>
+              <textarea id="editRoleDescription" class="form-textarea" placeholder="Describe this role's responsibilities..." style="min-height: 60px;" maxlength="200"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Menu Permissions * (Select at least one)</label>
+              <div id="editRolePermissionsContainer" style="background: #f9fafb; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb;">
+                <!-- Permissions will be populated here -->
+              </div>
+            </div>
+
+            <div class="error-message-box" id="editRoleErrorMsg" style="font-size: 12px; margin-bottom: 12px;"></div>
+
+            <div class="form-button-group">
+              <button type="submit" class="btn-primary">✓ Update Role</button>
+              <button type="button" class="btn-secondary" onclick="window.app.closeEditRoleModal()">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+<!-- New Chat Modal -->
+      <div id="newChatModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+          <h3 class="modal-header">💬 Start New Chat</h3>
+          <form id="newChatForm">
+            <div class="form-group">
+              <label class="form-label">Chat Name (Optional)</label>
+              <input type="text" id="newChatName" class="form-input" placeholder="e.g., Project Team Chat" maxlength="100">
+              <p style="margin: 4px 0 0 0; font-size: 11px; color: #6b7280;">Leave empty for auto-generated name</p>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Select People *</label>
+              <div id="newChatUsersList" style="max-height: 300px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; background: #f9fafb;">
+                <p style="text-align: center; padding: 20px; color: #6b7280;">Loading users...</p>
+              </div>
+            </div>
+
+            <div class="error-message-box" id="newChatErrorMsg" style="font-size: 12px; margin-bottom: 12px;"></div>
+
+            <div class="form-button-group">
+              <button type="submit" class="btn-primary">✓ Create Chat</button>
+              <button type="button" class="btn-secondary" onclick="window.app.closeNewChatModal()">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Add Participant Modal -->
+      <div id="addParticipantModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+          <h3 class="modal-header">➕ Add Person to Chat</h3>
+          <form id="addParticipantForm">
+            <div class="form-group">
+              <label class="form-label">Select Person *</label>
+              <div id="addParticipantUsersList" style="max-height: 300px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; background: #f9fafb;">
+                <p style="text-align: center; padding: 20px; color: #6b7280;">Loading users...</p>
+              </div>
+            </div>
+
+            <div class="error-message-box" id="addParticipantErrorMsg" style="font-size: 12px; margin-bottom: 12px;"></div>
+
+            <div class="form-button-group">
+              <button type="submit" class="btn-primary">✓ Add Person</button>
+              <button type="button" class="btn-secondary" onclick="window.app.closeAddParticipantModal()">Cancel</button>
+          
+          <form id="customerForm">
+            <!-- Customer ID (hidden for new, shown for edit) -->
+            <div class="form-group" id="customerIdField" style="display: none;">
+              <label class="form-label">Customer ID</label>
+              <input type="text" id="customerId" class="form-input" readonly style="background: #f3f4f6;">
+            </div>
+
+            <!-- Company Name -->
+            <div class="form-group">
+              <label class="form-label">Company Name *</label>
+              <input type="text" id="customerCompany" class="form-input" required placeholder="Enter company name">
+            </div>
+
+            <!-- Contact Person -->
+            <div class="form-group">
+              <label class="form-label">Contact Person</label>
+              <input type="text" id="customerContact" class="form-input" placeholder="Enter contact person name">
+            </div>
+
+            <!-- Email -->
+            <div class="form-group">
+              <label class="form-label">Email</label>
+              <input type="email" id="customerEmail" class="form-input" placeholder="email@example.com">
+            </div>
+
+            <!-- Mobile -->
+            <div class="form-group">
+              <label class="form-label">Mobile</label>
+              <input type="tel" id="customerMobile" class="form-input" placeholder="+1234567890">
+            </div>
+
+            <!-- Location -->
+            <div class="form-group">
+              <label class="form-label">Location</label>
+              <input type="text" id="customerLocation" class="form-input" placeholder="Enter location">
+            </div>
+
+            <!-- Notes -->
+            <div class="form-group">
+              <label class="form-label">Notes</label>
+              <textarea id="customerNotes" class="form-textarea" rows="3" placeholder="Additional notes..."></textarea>
+            </div>
+
+            <!-- Error Message -->
+            <div id="customerErrorMsg" class="error-message-box"></div>
+
+            <!-- Buttons -->
+            <div class="form-button-group">
+              <button type="submit" id="customerSubmitBtn" class="btn-primary">Create Customer</button>
+              <button type="button" class="btn-secondary" onclick="window.app.closeCustomerModal()">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+            <!-- Product Modal -->
+      <div id="productModal" class="modal">
+        <div class="modal-content">
+          <h3 class="modal-header" id="productModalTitle">Add New Product</h3>
+          <div class="error-message-box" id="productErrorMsg"></div>
+          <form id="productForm">
+            <div class="form-group">
+              <label class="form-label">Category *</label>
+              <select id="productCategory" class="form-select" required>
+                <option value="">Select Category</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Product ID *</label>
+              <input type="text" id="productId" class="form-input" placeholder="e.g. PROD-001" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Product Name *</label>
+              <input type="text" id="productName" class="form-input" placeholder="e.g. Wireless Mouse" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Description</label>
+              <textarea id="productDescription" class="form-textarea" placeholder="Product description"></textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Stock Quantity *</label>
+              <input type="number" id="productStock" class="form-input" placeholder="0" min="0" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Unit Price *</label>
+              <input type="number" id="productUnitPrice" class="form-input" placeholder="0.00" min="0" step="0.01" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Entry Date *</label>
+              <input type="date" id="productEntryDate" class="form-input" required>
+            </div>
+            <div class="form-button-group">
+              <button type="submit" class="btn-primary" id="productSubmitBtn">Add Product</button>
+              <button type="button" class="btn-secondary" onclick="window.app.closeProductModal()">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+<!-- Edit Category Modal -->
+      <div id="editCategoryModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+          <h3 class="modal-header">Edit Category</h3>
+          <form id="editCategoryForm">
+            <div class="form-group">
+              <label class="form-label">Category Name *</label>
+              <input type="text" id="editCategoryName" class="form-input" placeholder="Category name" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Description</label>
+              <textarea id="editCategoryDescription" class="form-textarea" placeholder="Category description (optional)" style="min-height: 80px;"></textarea>
+            </div>
+            <div class="error-message-box" id="editCategoryErrorMsg" style="font-size: 12px; margin-bottom: 12px;"></div>
+            <div class="form-button-group">
+              <button type="submit" class="btn-primary">✓ Update Category</button>
+              <button type="button" class="btn-secondary" onclick="window.app.closeEditCategoryModal()">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+
+
+       <!-- Categories Modal -->
+      <div id="categoriesModal" class="modal">
+        <div class="modal-content">
+          <h3 class="modal-header">Manage Categories</h3>
+          <div style="margin-bottom: 20px;">
+            <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0;">Add New Category</h4>
+            <form id="categoryForm">
+              <div class="form-group" style="margin-bottom: 12px;">
+                <input type="text" id="categoryName" class="form-input" placeholder="Category name (e.g. Electronics)" required>
+              </div>
+              <div class="form-group" style="margin-bottom: 12px;">
+                <textarea id="categoryDescription" class="form-textarea" placeholder="Description (optional)" style="min-height: 60px;"></textarea>
+              </div>
+              <div class="error-message-box" id="categoryErrorMsg" style="font-size: 11px; margin-bottom: 12px;"></div>
+              <button type="submit" class="btn-primary" style="width: 100%;">Add Category</button>
+            </form>
+          </div>
+          <hr style="margin: 20px 0; border: none; border-top: 1px solid #e5e7eb;">
+          <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0;">Existing Categories (<span id="categoryCount">0</span>)</h4>
+          <div class="categories-list" id="categoriesList">Loading...</div>
+          <button type="button" class="btn-secondary" style="width: 100%; margin-top: 16px;" onclick="window.app.closeCategoriesModal()">Done</button>
+        </div>
+      </div>
+    `;
+  }
+
+  showConfirm(title, message, onConfirm, onCancel) {
+    console.log('💬 Showing confirm dialog:', title);
+
+    const modal = document.getElementById('confirmModal');
+    if (!modal) {
+      console.error('❌ Confirm modal not found');
+      return;
+    }
+
+    document.getElementById('confirmTitle').textContent = title;
+    document.getElementById('confirmMessage').textContent = message;
+
+    const yesBtn = document.getElementById('confirmYes');
+    const noBtn = document.getElementById('confirmNo');
+
+    // Clone buttons to remove old event listeners
+    const newYesBtn = yesBtn.cloneNode(true);
+    const newNoBtn = noBtn.cloneNode(true);
+    yesBtn.parentNode.replaceChild(newYesBtn, yesBtn);
+    noBtn.parentNode.replaceChild(newNoBtn, noBtn);
+
+    // YES/CONFIRM button
+    newYesBtn.onclick = () => {
+      console.log('✅ User clicked Confirm');
+      modal.classList.remove('active');
+      modal.style.display = 'none';
+
+      if (onConfirm && typeof onConfirm === 'function') {
+        onConfirm();
+      }
+    };
+
+    // NO/CANCEL button
+    newNoBtn.onclick = () => {
+      console.log('❌ User clicked Cancel');
+      modal.classList.remove('active');
+      modal.style.display = 'none';
+
+      if (onCancel && typeof onCancel === 'function') {
+        onCancel();
+      }
+    };
+
+    // Show modal
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+  }
+
+  //========= 
+  openAddUser() {
+    console.log('👤 Opening Add User Modal');
+    this.editingUserId = null;
+
+    document.getElementById('userModalTitle').textContent = 'Add New User';
+    document.getElementById('userForm').reset();
+    document.getElementById('userErrorMsg').textContent = '';
+
+    const userIdField = document.getElementById('userIdField');
+    if (userIdField) {
+      userIdField.style.display = 'none';
+    }
+
+    const usernameField = document.getElementById('userName');
+    if (usernameField) {
+      usernameField.readOnly = false;
+      usernameField.style.background = 'white';
+    }
+
+    document.getElementById('userSubmitBtn').textContent = 'Create User';
+    document.getElementById('userPassword').required = true;
+    document.getElementById('userPassword').placeholder = 'Enter password';
+
+    // Load roles dynamically
+    this.updateUserRoleDropdown();
+
+    ui.openModal('userModal');
+    console.log('✅ Add user modal opened');
+  }
+
+  updateUserRoleDropdown() {
+    const select = document.getElementById('userRole');
+    if (!select) return;
+
+    select.innerHTML = '';
+
+    // Add system roles
+    const systemRoles = [
+      { value: 'admin', label: 'Admin - Full Access', desc: 'Complete system control' },
+      { value: 'manager', label: 'Manager - Dashboard, Sales & Products', desc: 'Manage operations' },
+      { value: 'user', label: 'User - Dashboard & Sales Only', desc: 'Basic access' }
+    ];
+
+    systemRoles.forEach(role => {
+      const option = document.createElement('option');
+      option.value = role.value;
+      option.textContent = role.label;
+      select.appendChild(option);
+    });
+
+    // Add custom roles
+    if (this.roles && this.roles.length > 0) {
+      const customRoles = this.roles.filter(r => r.is_system !== 1);
+
+      if (customRoles.length > 0) {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = '─── Custom Roles ───';
+
+        customRoles.forEach(role => {
+          const option = document.createElement('option');
+          option.value = role.name;
+          option.textContent = `${role.display_name} - ${role.permissions?.length || 0} permissions`;
+          optgroup.appendChild(option);
+        });
+
+        select.appendChild(optgroup);
+      }
+    }
+  }
+
+  // ========== USER MANAGEMENT METHODS ==========
+  openAddUserModal() {
+    console.log('🔓 Opening Add User Modal');
+    this.editingUserId = null;
+
+    const modal = document.getElementById('userModal');
+    if (!modal) {
+      console.error('❌ userModal not found!');
+      this.createUserModal();
+      return;
+    }
+
+    document.getElementById('userModalTitle').textContent = 'Add New User';
+    document.getElementById('userForm').reset();
+    document.getElementById('userErrorMsg').innerHTML = '';
+    document.getElementById('userIdField').style.display = 'none';
+    document.getElementById('userPassword').placeholder = 'Enter password';
+    document.getElementById('userPassword').required = true;
+    document.getElementById('userSubmitBtn').textContent = 'Create User';
+
+    ui.openModal('userModal');
+  }
+
+  //================== user edit method ==================
+  openEditUser(id) {
+    console.log('✏️ Opening Edit User Modal:', id);
+
+    const user = this.users.find(u => u.id === id);
+    if (!user) {
+      console.error('❌ User not found:', id);
+      this.showConfirm('Error', 'User not found');
+      return;
+    }
+
+    this.editingUserId = id;
+
+    document.getElementById('userModalTitle').textContent = 'Edit User';
+    document.getElementById('userName').value = user.username;
+    document.getElementById('userName').readOnly = true;
+    document.getElementById('userName').style.background = '#f3f4f6';
+
+    document.getElementById('userFullName').value = user.full_name || '';
+    document.getElementById('userSalesCode').value = user.sales_code || '';
+    document.getElementById('userEmail').value = user.email || '';
+    document.getElementById('userRole').value = user.role;
+    document.getElementById('userPassword').value = '';
+    document.getElementById('userPassword').required = false;
+    document.getElementById('userPassword').placeholder = 'Leave empty to keep current password';
+
+    const userIdField = document.getElementById('userIdField');
+    if (userIdField) {
+      userIdField.style.display = 'block';
+      document.getElementById('userId').value = user.id.substring(0, 8).toUpperCase();
+    }
+
+    document.getElementById('userSubmitBtn').textContent = 'Update User';
+    document.getElementById('userErrorMsg').textContent = '';
+
+    this.updateUserRoleDropdown();
+
+    setTimeout(() => {
+      document.getElementById('userRole').value = user.role;
+    }, 100);
+
+    ui.openModal('userModal');
+    console.log('✅ Edit user modal opened for:', user.username);
+  }
+
+  async openEditUserModal(userId) {
+    console.log('✏️ Opening Edit User Modal for:', userId);
+
+    try {
+      const res = await fetch(`/api/users/${userId}`, { credentials: 'same-origin' });
+      const data = await res.json();
+
+      if (!res.ok) {
+        this.showConfirm('Error', data.error || 'Failed to load user');
+        return;
+      }
+
+      const user = data.user;
+      this.editingUserId = user.id;
+
+      const modal = document.getElementById('userModal');
+      if (!modal) {
+        this.createUserModal();
+      }
+
+      document.getElementById('userModalTitle').textContent = 'Edit User';
+      document.getElementById('userId').value = user.id;
+      document.getElementById('userName').value = user.username;
+      document.getElementById('userFullName').value = user.full_name || '';
+      document.getElementById('userEmail').value = user.email || '';
+      document.getElementById('userRole').value = user.role;
+      document.getElementById('userPassword').value = '';
+      document.getElementById('userPassword').placeholder = 'Leave blank to keep current password';
+      document.getElementById('userPassword').required = false;
+      document.getElementById('userIdField').style.display = 'block';
+      document.getElementById('userErrorMsg').innerHTML = '';
+      document.getElementById('userSubmitBtn').textContent = 'Update User';
+
+      ui.openModal('userModal');
+    } catch (e) {
+      this.showConfirm('Error', `Network error: ${e.message}`);
+    }
+  }
+
+  deleteUserConfirm(userId, userName) {
+    console.log('🗑️ Delete user confirm:', userId, userName);
+
+    if (userId === this.currentUser.id) {
+      this.showConfirm('Error', 'You cannot delete your own account');
+      return;
+    }
+
+    this.showConfirm(
+      'Delete User',
+      `Are you sure you want to delete "${userName}"?\n\nThis action cannot be undone.`,
+      () => this.deleteUser(userId)
+    );
+  }
+
+  async deleteUser(userId) {
+    try {
+      const result = await usersModule.deleteUser(userId);
+
+      if (!result.success) {
+        this.showConfirm('Error', result.error || 'Failed to delete user');
+        return;
+      }
+
+      this.showConfirm('Success', '✓ User deleted successfully!', () => {
+        if (this.currentPage === 'users') {
+          usersPageModule.loadUsersList(this);
+          usersPageModule.loadUsersListCard(this);
+        }
+      });
+    } catch (e) {
+      this.showConfirm('Error', `Network error: ${e.message}`);
+    }
+  }
+
+  async handleUserFormSubmit(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('💾 ========== SAVE USER START ==========');
+
+    const username = document.getElementById('userName').value.trim();
+    const fullName = document.getElementById('userFullName').value.trim();
+    const salesCode = document.getElementById('userSalesCode')?.value.trim() || '';
+    const email = document.getElementById('userEmail').value.trim();
+    const role = document.getElementById('userRole').value;
+    const password = document.getElementById('userPassword').value.trim();
+
+    const errorMsg = document.getElementById('userErrorMsg');
+    errorMsg.textContent = '';
+
+    console.log('📝 Form data:', { username, fullName, salesCode, email, role, passwordLength: password.length, editing: !!this.editingUserId });
+
+    // Validation
+    if (!username || !fullName || !role) {
+      errorMsg.textContent = '❌ Username, full name, and role are required';
+      return;
+    }
+
+    if (username.length < 3) {
+      errorMsg.textContent = '❌ Username must be at least 3 characters';
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
+      errorMsg.textContent = '❌ Username can only contain letters, numbers, underscores and hyphens';
+      return;
+    }
+
+    // Check username uniqueness for NEW users
+    if (!this.editingUserId) {
+      const existingUser = this.users.find(u => u.username.toLowerCase() === username.toLowerCase());
+      if (existingUser) {
+        console.error('❌ Username already exists:', username);
+        errorMsg.textContent = `❌ Username "${username}" is already taken. Please choose a different username.`;
+        return;
+      }
+    }
+
+    // Only require password for new users
+    if (!this.editingUserId && !password) {
+      errorMsg.textContent = '❌ Password is required for new users';
+      return;
+    }
+
+    if (password && password.length < 6) {
+      errorMsg.textContent = '❌ Password must be at least 6 characters';
+      return;
+    }
+
+    if (email && !this.isValidEmail(email)) {
+      errorMsg.textContent = '❌ Invalid email address';
+      return;
+    }
+
+    const userData = {
+      username,
+      full_name: fullName,
+      sales_code: salesCode || null,
+      email: email || null,
+      role
+    };
+
+    // Only include password if provided
+    if (password) {
+      userData.password = password;
+    }
+
+    console.log('📤 Sending user data:', { ...userData, password: password ? '***' : 'not provided' });
+
+    try {
+      let result;
+
+      if (this.editingUserId) {
+        console.log('✏️ Updating user:', this.editingUserId);
+        result = await usersModule.updateUser(this.editingUserId, userData);
+      } else {
+        console.log('➕ Creating new user');
+        result = await usersModule.createUser(userData);
+      }
+
+      if (!result.success) {
+        console.error('❌ Save failed:', result.error);
+
+        if (result.error.includes('UNIQUE constraint') || result.error.includes('already exists')) {
+          errorMsg.textContent = `❌ Username "${username}" is already taken. Please choose a different username.`;
+        } else {
+          errorMsg.textContent = `❌ ${result.error || 'Failed to save user'}`;
+        }
+        return;
+      }
+
+      console.log('✅ User saved successfully');
+      console.log('💾 ========== SAVE USER COMPLETE ==========\n');
+
+      this.showConfirm(
+        'Success',
+        `✓ User "${username}" ${this.editingUserId ? 'updated' : 'created'} successfully!`,
+        async () => {
+          this.closeUserModal();
+          this.editingUserId = null;
+
+          // Reload users list
+          if (this.currentPage === 'users' && window.usersPageModule) {
+            await usersPageModule.loadUsers(this);
+          }
+        }
+      );
+    } catch (error) {
+      console.error('❌ Error saving user:', error);
+      errorMsg.textContent = `❌ ${error.message || 'An error occurred. Please try again.'}`;
+    }
+  }
+
+  createUserModal() {
+    console.log('🔨 Creating user modal dynamically');
+
+    const modalHTML = `
+      <div id="userModal" class="modal">
+        <div class="modal-content">
+          <h3 class="modal-header" id="userModalTitle">Add New User</h3>
+          <div class="error-message-box" id="userErrorMsg"></div>
+          <form id="userForm">
+            <div class="form-group" id="userIdField" style="display: none;">
+              <label class="form-label">User ID</label>
+              <input type="text" id="userId" class="form-input" readonly style="background: #f3f4f6;">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Username *</label>
+              <input type="text" id="userName" class="form-input" placeholder="Enter username" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Full Name *</label>
+              <input type="text" id="userFullName" class="form-input" placeholder="Enter full name" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Email</label>
+              <input type="email" id="userEmail" class="form-input" placeholder="Enter email (optional)">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Role</label>
+              <select id="userRole" class="form-select">
+                <option value="admin">Admin - Full Access</option>
+                <option value="manager">Manager - Dashboard, Sales & Products</option>
+                <option value="user">User - Dashboard & Sales Only</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Password *</label>
+              <input type="password" id="userPassword" class="form-input" placeholder="Enter password" required>
+            </div>
+            <div class="form-button-group">
+              <button type="submit" class="btn-primary" id="userSubmitBtn">Create User</button>
+              <button type="button" class="btn-secondary" onclick="ui.closeModal('userModal')">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+
+    // Add to modals if not exists
+    const modalsContainer = document.querySelector('.dashboard-container');
+    if (modalsContainer) {
+      modalsContainer.insertAdjacentHTML('beforeend', modalHTML);
+    }
+  }
+
+  // ========== QUICK ADD CUSTOMER FROM SALES PAGE ==========
+  openAddCustomerQuick() {
+    console.log('👥 Opening quick add customer from sales page');
+
+    // Reset form
+    this.editingCustomerId = null;
+
+    document.getElementById('customerModalTitle').textContent = 'Add New Customer';
+    document.getElementById('customerForm').reset();
+    document.getElementById('customerErrorMsg').textContent = '';
+    document.getElementById('customerIdField').style.display = 'none';
+    document.getElementById('customerSubmitBtn').textContent = 'Create Customer';
+
+    // Open modal
+    ui.openModal('customerModal');
+    console.log('✅ Customer modal opened from sales page');
+  }
+
+  openAddCustomer() {
+    console.log('👥 Opening Add Customer modal');
+
+    this.editingCustomerId = null;
+
+    document.getElementById('customerModalTitle').textContent = 'Add New Customer';
+    document.getElementById('customerForm').reset();
+    document.getElementById('customerErrorMsg').textContent = '';
+
+    const customerIdField = document.getElementById('customerIdField');
+    if (customerIdField) {
+      customerIdField.style.display = 'none';
+    }
+
+    document.getElementById('customerSubmitBtn').textContent = 'Create Customer';
+
+    ui.openModal('customerModal');
+    console.log('✅ Customer modal opened');
+  }
+
+  // ========== SALE ITEM MANAGEMENT ==========
+  addSaleItem() {
+    console.log('📦 Adding sale item...');
+
+    const productSelect = document.getElementById('saleProduct');
+    const qtyInput = document.getElementById('saleQty');
+    const unitPriceInput = document.getElementById('saleUnitPrice');
+    const sellPriceInput = document.getElementById('saleSellPrice');
+
+    if (!productSelect || !qtyInput || !sellPriceInput || !unitPriceInput) {
+      console.error('❌ Form elements not found');
+      return;
+    }
+
+    const productId = productSelect.value;
+    const qty = parseInt(qtyInput.value);
+    const sellPrice = parseFloat(sellPriceInput.value);
+    const unitPrice = parseFloat(unitPriceInput.value);
+
+    console.log('📝 Form values:', { productId, qty, sellPrice, unitPrice });
+
+    // Validation
+    if (!productId) {
+      this.showConfirm('Error', '❌ Please select a product');
+      return;
+    }
+
+    if (!qty || qty < 1 || isNaN(qty)) {
+      this.showConfirm('Error', '❌ Please enter a valid quantity (minimum 1)');
+      return;
+    }
+
+    if (sellPrice === undefined || sellPrice < 0 || isNaN(sellPrice)) {
+      this.showConfirm('Error', '❌ Please enter a valid selling price');
+      return;
+    }
+
+    const product = this.products.find(p => p.id === productId);
+    if (!product) {
+      console.error('❌ Product not found:', productId);
+      this.showConfirm('Error', '❌ Product not found');
+      return;
+    }
+
+    console.log('✅ Product found:', product.name);
+
+    if (qty > product.stock) {
+      this.showConfirm('Error', `❌ Insufficient stock!\n\nRequested: ${qty}\nAvailable: ${product.stock}`);
+      return;
+    }
+
+    // Initialize currentSaleItems if undefined
+    if (!this.currentSaleItems) {
+      console.warn('⚠️ currentSaleItems was undefined, initializing...');
+      this.currentSaleItems = [];
+    }
+
+    // Create item object
+    const item = {
+      product_id: productId,
+      product_name: product.name,
+      product_description: product.description || '', // ← ADD THIS LINE
+      qty: qty,
+      unit_price: unitPrice || product.unit_price,
+      selling_price: sellPrice,
+      total: qty * sellPrice
+    };
+
+    console.log('📦 Item to add:', item);
+
+    // Add to array
+    this.currentSaleItems.push(item);
+    console.log('✅ Item added to array! Total items:', this.currentSaleItems.length);
+
+    // ⭐⭐⭐ UPDATE UI ⭐⭐⭐
+    console.log('🎨 Calling renderSaleItems()...');
+    this.doRenderSaleItems(); // Using different name to avoid conflicts
+
+    console.log('💰 Calling updateSaleTotal()...');
+    this.updateSaleTotal();
+
+    // Reset form
+    productSelect.value = '';
+    qtyInput.value = '1';
+    unitPriceInput.value = '';
+    sellPriceInput.value = '';
+
+    const totalInput = document.getElementById('saleItemTotal');
+    if (totalInput) totalInput.value = '';
+
+    console.log('✅ Sale item added successfully and table updated!');
+  }
+
+  // Using different method name to avoid conflicts
+  doRenderSaleItems() {
+    console.log('🎨 ========== DO RENDER SALE ITEMS START ==========');
+    console.log('📊 Items to render:', this.currentSaleItems?.length || 0);
+
+    const tbody = document.getElementById('saleItemsTable');
+
+    if (!tbody) {
+      console.error('❌ Table body not found!');
+      return;
+    }
+
+    console.log('✓ Table body found');
+
+    if (!this.currentSaleItems || this.currentSaleItems.length === 0) {
+      console.log('Empty items, showing placeholder');
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="8" style="padding: 40px; text-align: center; color: #9ca3af; font-size: 13px;">
+            📦 No items added yet. Select a product and click "Add" to start.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    console.log('Building rows for', this.currentSaleItems.length, 'items...');
+
+    // Clear existing content
+    tbody.innerHTML = '';
+
+    // Build rows with event listeners (not inline onclick)
+    for (let i = 0; i < this.currentSaleItems.length; i++) {
+      const item = this.currentSaleItems[i];
+      console.log(`  Row ${i + 1}:`, item.product_name, '$' + item.total.toFixed(2));
+
+      const bgColor = i % 2 === 0 ? 'white' : '#f9fafb';
+
+      // Create row element
+      const row = document.createElement('tr');
+      row.style.cssText = `border-bottom: 1px solid #e5e7eb; background: ${bgColor}; transition: all 0.3s ease;`;
+      row.onmouseover = function () { this.style.background = '#f0f9ff'; };
+      row.onmouseout = function () { this.style.background = bgColor; };
+
+      // Build row HTML
+      row.innerHTML = `
+        <td style="padding: 12px; text-align: center; color: #6b7280; font-weight: 600;">${i + 1}</td>
+        <td style="padding: 12px; color: #1f2937; font-weight: 700; font-size: 13px;">${this.escapeHtml(item.product_name)}</td>
+        <td style="padding: 12px; color: #6b7280; font-size: 12px; font-style: italic; line-height: 1.4; max-width: 300px;">${this.escapeHtml(item.product_description || '-')}</td>
+        <td style="padding: 12px; text-align: center; font-weight: 700; color: #1f2937;  border-radius: 4px;">${item.qty}</td>
+        <td style="padding: 12px; text-align: right; color: #6b7280; font-family: monospace; font-size: 12px;">$${item.unit_price.toFixed(2)}</td>
+        <td style="padding: 12px; text-align: right; color: #10b981; font-weight: 700; font-family: monospace;">$${item.selling_price.toFixed(2)}</td>
+        <td style="padding: 12px; text-align: right; font-weight: 800; color: #1f2937; font-family: monospace; font-size: 14px;">$${item.total.toFixed(2)}</td>
+        <td style="padding: 12px; text-align: center;">
+          <button type="button" class="remove-item-btn" data-index="${i}" style="padding: 7px 14px; background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 4px;" title="Remove this item from the order">
+            <span>🗑️</span>
+            <span>Remove</span>
+          </button>
+        </td>
+      `;
+
+      // Attach event listener to button
+      const removeBtn = row.querySelector('.remove-item-btn');
+      if (removeBtn) {
+        removeBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const index = parseInt(e.currentTarget.getAttribute('data-index'));
+          console.log('🗑️ Remove button clicked for index:', index);
+          this.removeSaleItem(index);
+        });
+
+        // Add hover effects
+        removeBtn.addEventListener('mouseover', function () {
+          this.style.background = '#fecaca';
+          this.style.borderColor = '#dc2626';
+          this.style.transform = 'scale(1.05)';
+        });
+
+        removeBtn.addEventListener('mouseout', function () {
+          this.style.background = '#fee2e2';
+          this.style.borderColor = '#fecaca';
+          this.style.transform = 'scale(1)';
+        });
+      }
+
+      // Add row to tbody
+      tbody.appendChild(row);
+    }
+
+    console.log('✅ Rows appended, total:', tbody.children.length);
+    console.log('🎨 ========== DO RENDER COMPLETE ==========\n');
+  }
+
+  // Keep both names pointing to same function
+  renderSaleItems() {
+    this.doRenderSaleItems();
+  }
+
+  removeSaleItem(index) {
+    console.log('🗑️ ========== REMOVE ITEM START ==========');
+    console.log('📍 Removing item at index:', index);
+    console.log('📊 Current items before removal:', this.currentSaleItems?.length);
+
+    if (!this.currentSaleItems || this.currentSaleItems.length === 0) {
+      console.warn('⚠️ No items to remove');
+      return;
+    }
+
+    if (index < 0 || index >= this.currentSaleItems.length) {
+      console.error('❌ Invalid index:', index, '(array length:', this.currentSaleItems.length + ')');
+      return;
+    }
+
+    const removedItem = this.currentSaleItems[index];
+    console.log('🗑️ Item to remove:', removedItem.product_name, `Qty: ${removedItem.qty}`, `Total: $${removedItem.total.toFixed(2)}`);
+
+    // Remove from array
+    this.currentSaleItems.splice(index, 1);
+    console.log('✅ Item removed from array');
+    console.log('📊 Remaining items:', this.currentSaleItems.length);
+
+    // Re-render table (this will automatically re-number items)
+    console.log('🎨 Re-rendering table...');
+    this.doRenderSaleItems();
+
+    // Update total
+    console.log('💰 Updating total...');
+    this.updateSaleTotal();
+
+    console.log('✅ Item removed successfully');
+    console.log('🗑️ ========== REMOVE ITEM COMPLETE ==========\n');
+  }
+
+
+
+  removeSaleItem(index) {
+    console.log('🗑️ Removing item at index:', index);
+
+    if (!this.currentSaleItems || this.currentSaleItems.length === 0) {
+      console.warn('⚠️ No items to remove');
+      return;
+    }
+
+    const removedItem = this.currentSaleItems[index];
+    console.log('🗑️ Removing:', removedItem.product_name, `$${removedItem.total.toFixed(2)}`);
+
+    this.currentSaleItems.splice(index, 1);
+    console.log('✅ Item removed. Remaining items:', this.currentSaleItems.length);
+
+    this.renderSaleItems();
+    this.updateSaleTotal();
+  }
+
+  // ========== REMOVE SINGLE ITEM ==========
+  removeSaleItem(index) {
+    console.log('🗑️ ========== REMOVE ITEM START ==========');
+    console.log('📍 Index to remove:', index);
+    console.log('📊 Items before removal:', this.currentSaleItems?.length);
+
+    if (!this.currentSaleItems || this.currentSaleItems.length === 0) {
+      console.error('❌ No items to remove - array is empty');
+      return;
+    }
+
+    if (index < 0 || index >= this.currentSaleItems.length) {
+      console.error('❌ Invalid index:', index, '(valid range: 0 to', this.currentSaleItems.length - 1 + ')');
+      return;
+    }
+
+    const removedItem = this.currentSaleItems[index];
+    console.log('🗑️ Removing:', removedItem.product_name, `Total: $${removedItem.total.toFixed(2)}`);
+
+    // Remove from array
+    this.currentSaleItems.splice(index, 1);
+    console.log('✅ Item removed from array');
+    console.log('📊 Items after removal:', this.currentSaleItems.length);
+
+    // CRITICAL: Re-render table
+    console.log('🎨 Calling doRenderSaleItems...');
+    this.doRenderSaleItems();
+    console.log('✅ Table re-rendered');
+
+    // CRITICAL: Update total
+    console.log('💰 Calling updateSaleTotal...');
+    this.updateSaleTotal();
+    console.log('✅ Total updated');
+
+    console.log('🗑️ ========== REMOVE ITEM COMPLETE ==========\n');
+  }
+
+  // ========== CLEAR ALL ITEMS ==========
+  clearSaleItems() {
+    console.log('🗑️ ========== CLEAR ALL ITEMS START ==========');
+    console.log('📊 Current items:', this.currentSaleItems?.length || 0);
+
+    if (!this.currentSaleItems || this.currentSaleItems.length === 0) {
+      console.log('⚠️ No items to clear');
+      this.showConfirm('Info', 'No items to clear');
+      return;
+    }
+
+    const itemCount = this.currentSaleItems.length;
+    const totalAmount = this.currentSaleItems.reduce((sum, item) => sum + (item.total || 0), 0);
+
+    console.log('📋 Items to clear:', itemCount);
+    console.log('💰 Total amount to clear:', `$${totalAmount.toFixed(2)}`);
+
+    this.showConfirm(
+      'Clear All Items',
+      `Are you sure you want to remove all ${itemCount} items from this sale?\n\nTotal amount: $${totalAmount.toFixed(2)}\n\nThis action cannot be undone.`,
+      () => {
+        console.log('✅ User confirmed - clearing all items');
+
+        // Clear array
+        this.currentSaleItems = [];
+        console.log('✅ Items array cleared');
+
+        // Re-render table using doRenderSaleItems (NOT renderSaleItems)
+        console.log('🎨 Calling doRenderSaleItems...');
+        this.doRenderSaleItems();
+        console.log('✅ Table re-rendered (should show empty state)');
+
+        // Update total
+        console.log('💰 Calling updateSaleTotal...');
+        this.updateSaleTotal();
+        console.log('✅ Total updated (should be $0.00)');
+
+        // Reset form fields
+        const productSelect = document.getElementById('saleProduct');
+        const qtyInput = document.getElementById('saleQty');
+        const unitPriceInput = document.getElementById('saleUnitPrice');
+        const sellPriceInput = document.getElementById('saleSellPrice');
+        const totalInput = document.getElementById('saleItemTotal');
+
+        if (productSelect) productSelect.value = '';
+        if (qtyInput) qtyInput.value = '1';
+        if (unitPriceInput) unitPriceInput.value = '';
+        if (sellPriceInput) sellPriceInput.value = '';
+        if (totalInput) totalInput.value = '';
+
+        console.log('✅ Form fields reset');
+        console.log('🗑️ ========== CLEAR ALL ITEMS COMPLETE ==========\n');
+      }
+    );
+  }
+
+  // ========== UPDATE SALE TOTAL ==========
+  updateSaleTotal() {
+    console.log('💰 ========== UPDATE SALE TOTAL START ==========');
+
+    // Initialize if needed
+    if (!this.currentSaleItems) {
+      this.currentSaleItems = [];
+    }
+
+    console.log('📊 Calculating total for', this.currentSaleItems.length, 'items');
+
+    // Calculate total
+    const total = this.currentSaleItems.reduce((sum, item) => {
+      const itemTotal = item.total || 0;
+      console.log(`  • ${item.product_name}: $${itemTotal.toFixed(2)}`);
+      return sum + itemTotal;
+    }, 0);
+
+    console.log(`📊 Calculated Total: $${total.toFixed(2)}`);
+
+    // Find and update the total element
+    let totalElement = document.getElementById('saleTotal');
+
+    if (!totalElement) {
+      console.warn('⚠️ saleTotal not found by ID, searching alternatives...');
+
+      // Try finding by style
+      const allParagraphs = document.querySelectorAll('p');
+      allParagraphs.forEach(p => {
+        const text = p.textContent.trim();
+        if (text.startsWith('$') && p.style.fontSize.includes('32px')) {
+          totalElement = p;
+          totalElement.id = 'saleTotal';
+          console.log('✓ Found total element by style');
+        }
+      });
+    }
+
+    if (!totalElement) {
+      // Try finding by parent text "Order Subtotal"
+      const allElements = document.querySelectorAll('*');
+      allElements.forEach(el => {
+        if (el.textContent.includes('Order Subtotal')) {
+          const nextP = el.nextElementSibling;
+          if (nextP && nextP.tagName === 'P') {
+            totalElement = nextP;
+            totalElement.id = 'saleTotal';
+            console.log('✓ Found total element as sibling');
+          } else {
+            const pElements = el.querySelectorAll('p');
+            pElements.forEach(p => {
+              if (p.textContent.includes('$')) {
+                totalElement = p;
+                totalElement.id = 'saleTotal';
+                console.log('✓ Found total element as child');
+              }
+            });
+          }
+        }
+      });
+    }
+
+    if (totalElement) {
+      const oldValue = totalElement.textContent;
+      totalElement.textContent = `$${total.toFixed(2)}`;
+      console.log(`✅ Total updated: ${oldValue} → $${total.toFixed(2)}`);
+
+      // Add animation
+      totalElement.style.transition = 'all 0.3s ease';
+      totalElement.style.transform = 'scale(1.1)';
+      totalElement.style.color = total === 0 ? '#dc2626' : '#10b981';
+
+      setTimeout(() => {
+        totalElement.style.transform = 'scale(1)';
+        totalElement.style.color = '#1f2937';
+      }, 300);
+    } else {
+      console.error('❌ Could not find sale total element!');
+    }
+
+    console.log('💰 ========== UPDATE SALE TOTAL COMPLETE ==========\n');
+  }
+
+  async saveSale() {
+    const customerId = document.getElementById('saleCustomer').value;
+
+    if (!customerId) {
+      this.showConfirm('Error', 'Please select a customer');
+      return;
+    }
+
+    if (this.currentSaleItems.length === 0) {
+      this.showConfirm('Error', 'Please add at least one item to the sale');
+      return;
+    }
+
+    const total = this.currentSaleItems.reduce((sum, item) => sum + item.total, 0);
+
+    const saleData = {
+      customer_id: customerId,
+      sale_date: new Date().toISOString(),
+      items: this.currentSaleItems,
+      total_amount: total
+    };
+
+    try {
+      const result = await salesModule.createSale(saleData);
+
+      if (!result.success) {
+        this.showConfirm('Error', result.error || 'Failed to create sale');
+        return;
+      }
+
+      this.showConfirm(
+        'Success',
+        `✓ Sale created successfully!\n\nOrder Total: $${total.toFixed(2)}\nItems: ${this.currentSaleItems.length}`,
+        async () => {
+          // Clear form
+          document.getElementById('saleCustomer').value = '';
+          document.getElementById('customerDetails').style.display = 'none';
+          this.currentSaleItems = [];
+          this.renderSaleItems();
+          this.updateSaleTotal();
+
+          // Reload data
+          await this.loadSales();
+          await this.loadProducts();
+
+          if (this.currentPage === 'sales' && window.salesPageModule) {
+            salesPageModule.loadRecentSales(this);
+          }
+        }
+      );
+    } catch (error) {
+      console.error('❌ Error saving sale:', error);
+      this.showConfirm('Error', 'An error occurred while saving the sale');
+    }
+  }
+
+  renderSaleItems() {
+    const container = document.getElementById('saleItemsContainer');
+    if (!container) return;
+
+    if (this.currentSaleItems.length === 0) {
+      container.innerHTML = '<p style="text-align: center; color: #6b7280; font-size: 13px; padding: 20px;">Click "Add Item" to add products to this sale</p>';
+      this.calculateSaleTotal();
+      return;
+    }
+
+    const html = this.currentSaleItems.map((item, index) => `
+      <div style="padding: 14px; border: 1px solid #e5e7eb; background: white; border-radius: 6px; margin-bottom: 10px;">
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-bottom: 10px;">
+          <div>
+            <label style="font-size: 11px; color: #6b7280; font-weight: 600; display: block; margin-bottom: 4px;">Product *</label>
+            <select class="form-select" style="padding: 6px; font-size: 13px;" onchange="window.app.updateSaleItemProduct(${index}, this.value)">
+              <option value="">-- Select Product --</option>
+              ${this.products.map(p => `<option value="${p.id}" ${item.product_id === p.id ? 'selected' : ''}>${p.product_id} - ${p.name}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 11px; color: #6b7280; font-weight: 600; display: block; margin-bottom: 4px;">Quantity *</label>
+            <input type="number" class="form-input" style="padding: 6px; font-size: 13px;" min="1" value="${item.qty}" onchange="window.app.updateSaleItem(${index}, 'qty', this.value)">
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+          <div>
+            <label style="font-size: 11px; color: #6b7280; font-weight: 600; display: block; margin-bottom: 4px;">Unit Price</label>
+            <input type="number" class="form-input" style="padding: 6px; font-size: 13px; background: #f3f4f6;" step="0.01" value="${item.unit_price.toFixed(2)}" readonly>
+          </div>
+          <div>
+            <label style="font-size: 11px; color: #6b7280; font-weight: 600; display: block; margin-bottom: 4px;">Selling Price *</label>
+            <input type="number" class="form-input" style="padding: 6px; font-size: 13px;" step="0.01" min="0" value="${item.selling_price.toFixed(2)}" onchange="window.app.updateSaleItem(${index}, 'selling_price', this.value)">
+          </div>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid #e5e7eb;">
+          <span style="font-size: 13px; font-weight: 600; color: #1f2937;">Item Total: <span style="color: #10b981;">$${item.total.toFixed(2)}</span></span>
+          <button type="button" onclick="window.app.removeSaleItem(${index})" style="padding: 6px 12px; font-size: 12px; background: #fee2e2; color: #dc2626; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">🗑️ Remove</button>
+        </div>
+      </div>
+    `).join('');
+
+    container.innerHTML = html;
+    this.calculateSaleTotal();
+  }
+
+  updateSaleItemProduct(index, productId) {
+    if (!productId) return;
+    const product = this.products.find(p => p.id === productId);
+    if (product) {
+      this.currentSaleItems[index].product_id = productId;
+      this.currentSaleItems[index].product_name = product.name;
+      this.currentSaleItems[index].unit_price = product.unit_price;
+      this.currentSaleItems[index].selling_price = product.unit_price;
+      this.renderSaleItems();
+    }
+  }
+
+  updateSaleItem(index, field, value) {
+    this.currentSaleItems[index][field] = parseFloat(value) || 0;
+    if (field === 'selling_price') {
+      if (this.currentSaleItems[index].selling_price < this.currentSaleItems[index].unit_price) {
+        this.currentSaleItems[index].selling_price = this.currentSaleItems[index].unit_price;
+      }
+    }
+    this.currentSaleItems[index].total = this.currentSaleItems[index].qty * this.currentSaleItems[index].selling_price;
+    this.renderSaleItems();
+  }
+
+
+  calculateSaleTotal() {
+    const subtotal = this.currentSaleItems.reduce((sum, item) => sum + (item.total || 0), 0);
+    const total = subtotal;
+
+    const subtotalEl = document.getElementById('saleSubtotal');
+    const totalEl = document.getElementById('saleTotal');
+
+    if (subtotalEl) subtotalEl.textContent = `$${subtotal.toFixed(2)}`;
+    if (totalEl) totalEl.textContent = `$${total.toFixed(2)}`;
+  }
+
+  async handleRoleFormSubmit(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('💾 ========== SAVE ROLE FORM SUBMIT ==========');
+
+    const roleName = document.getElementById('roleName')?.value.trim();
+    const displayName = document.getElementById('roleDisplayName')?.value.trim();
+    const description = document.getElementById('roleDescription')?.value.trim();
+
+    // Get selected permissions
+    const permissionCheckboxes = document.querySelectorAll('input[name="rolePermissions"]:checked');
+    const permissions = Array.from(permissionCheckboxes).map(cb => cb.value);
+
+    const errorMsg = document.getElementById('roleErrorMsg');
+    if (errorMsg) errorMsg.textContent = '';
+
+    console.log('📝 Role form values:', {
+      roleName,
+      displayName,
+      permissions,
+      description,
+      editing: !!this.editingRoleId
+    });
+
+    // Validation
+    if (!displayName || permissions.length === 0) {
+      const msg = '❌ Display name and at least one permission are required';
+      console.error(msg);
+      if (errorMsg) errorMsg.textContent = msg;
+      return;
+    }
+
+    // For new roles, validate name
+    if (!this.editingRoleId && !roleName) {
+      const msg = '❌ Role name is required';
+      console.error(msg);
+      if (errorMsg) errorMsg.textContent = msg;
+      return;
+    }
+
+    const roleData = {
+      display_name: displayName,
+      permissions: permissions,
+      description: description || ''
+    };
+
+    // Only include name for new roles
+    if (!this.editingRoleId) {
+      roleData.name = roleName.toLowerCase().replace(/\s+/g, '_');
+    }
+
+    console.log('📤 Sending role data:', roleData);
+
+    try {
+      let result;
+
+      if (this.editingRoleId) {
+        console.log('✏️ Updating role:', this.editingRoleId);
+
+        const res = await fetch(`/api/roles/${this.editingRoleId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify(roleData)
+        });
+
+        const data = await res.json();
+        console.log('📡 Response status:', res.status);
+        console.log('📦 Response data:', data);
+
+        if (!res.ok) {
+          console.error('❌ Update failed:', data.error);
+          if (errorMsg) errorMsg.textContent = `❌ ${data.error}`;
+          return;
+        }
+
+        result = { success: true };
+      } else {
+        console.log('➕ Creating new role');
+
+        const res = await fetch('/api/roles', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify(roleData)
+        });
+
+        const data = await res.json();
+        console.log('📡 Response status:', res.status);
+        console.log('📦 Response data:', data);
+
+        if (!res.ok) {
+          console.error('❌ Create failed:', data.error);
+          if (errorMsg) errorMsg.textContent = `❌ ${data.error}`;
+          return;
+        }
+
+        result = { success: true, id: data.id };
+      }
+
+      console.log('✅ Role saved successfully');
+      console.log('💾 ========== SAVE ROLE COMPLETE ==========\n');
+
+      // ⭐ Close modal first
+      this.closeRoleModal();
+      this.editingRoleId = null;
+
+      // ⭐ Reload roles list
+      console.log('🔄 Reloading roles...');
+      if (this.currentPage === 'users' && window.usersPageModule) {
+        await window.usersPageModule.loadRoles(this);
+      }
+
+      // ⭐ Show success message
+      setTimeout(() => {
+        this.showConfirm(
+          'Success',
+          `✓ Role "${displayName}" ${this.editingRoleId ? 'updated' : 'created'} successfully!`
+        );
+      }, 300);
+
+    } catch (error) {
+      console.error('❌ Error in handleRoleFormSubmit:', error);
+      if (errorMsg) {
+        errorMsg.textContent = `❌ ${error.message || 'An error occurred'}`;
+      }
+    }
+  }
+
+
+  async handleSalesFormSubmit(e) {
+    e.preventDefault();
+    console.log('💾 Submitting sale...');
+
+    const saleDate = document.getElementById('saleDate').value;
+    const customerId = document.getElementById('saleCustomer').value;
+    const errorMsg = document.getElementById('saleErrorMsg');
+
+    errorMsg.innerHTML = '';
+
+    if (!saleDate || !customerId) {
+      errorMsg.innerHTML = '❌ Please select date and customer';
+      return;
+    }
+
+    if (this.currentSaleItems.length === 0) {
+      errorMsg.innerHTML = '❌ Please add at least one item to the sale';
+      return;
+    }
+
+    for (let item of this.currentSaleItems) {
+      if (!item.product_id) {
+        errorMsg.innerHTML = '❌ All items must have a product selected';
+        return;
+      }
+      if (item.qty <= 0) {
+        errorMsg.innerHTML = '❌ All items must have quantity greater than 0';
+        return;
+      }
+      const product = this.products.find(p => p.id === item.product_id);
+      if (product && item.qty > product.stock) {
+        errorMsg.innerHTML = `❌ Not enough stock for ${product.name} (Available: ${product.stock})`;
+        return;
+      }
+    }
+
+    const totalAmount = this.currentSaleItems.reduce((sum, item) => sum + item.total, 0);
+
+    this.showConfirm(
+      'Confirm Sale',
+      `Complete this sale?\n\nTotal Amount: $${totalAmount.toFixed(2)}\nItems: ${this.currentSaleItems.length}\nCustomer: ${this.customers.find(c => c.id === customerId)?.company_name}`,
+      () => this.completeSale(saleDate, customerId)
+    );
+  }
+
+  async completeSale(saleDate, customerId) {
+    try {
+      console.log('💰 Completing sale...');
+      const totalAmount = this.currentSaleItems.reduce((sum, item) => sum + item.total, 0);
+
+      const saleData = {
+        customer_id: customerId,
+        sale_date: saleDate,
+        total_amount: totalAmount,
+        items: this.currentSaleItems.map(item => ({
+          product_id: item.product_id,
+          qty: parseInt(item.qty),
+          unit_price: item.unit_price,
+          selling_price: item.selling_price,
+          total: item.total
+        }))
+      };
+
+      const result = await salesModule.createSale(saleData);
+
+      if (!result.success) {
+        this.showConfirm('Error', result.error || 'Failed to complete sale');
+        return;
+      }
+
+      console.log('✅ Sale completed successfully');
+
+      // Reset form
+      this.currentSaleItems = [];
+      document.getElementById('salesForm').reset();
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('saleDate').value = today;
+
+      this.showConfirm(
+        'Success',
+        `✓ Sale completed successfully!\n\nTotal Amount: $${totalAmount.toFixed(2)}\nSale ID: ${result.id}`,
+        () => {
+          this.loadSalesData();
+          this.loadProducts();
+          this.renderSaleItems();
+        }
+      );
+    } catch (e) {
+      console.error('❌ Error completing sale:', e);
+      this.showConfirm('Error', `Network error: ${e.message}`);
+    }
+  }
+
+  // ========== CUSTOMER MANAGEMENT ==========
+  renderCustomerListInSales() {
+    const container = document.getElementById('saleCustomerList');
+    if (!container) return;
+
+    if (this.customers.length === 0) {
+      container.innerHTML = '<p style="text-align: center; padding: 20px; color: #6b7280; font-size: 13px;">No customers available. Add a new customer first.</p>';
+      return;
+    }
+
+    const html = this.customers.map(customer => {
+      const createdDate = new Date(customer.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+      const customerId = customer.id.substring(0, 8).toUpperCase();
+
+      return `
+        <div style="padding: 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: white; cursor: pointer; transition: all 0.2s;" 
+             onclick="window.app.selectCustomerFromList('${customer.id}')" 
+             onmouseover="this.style.borderColor='#667eea'; this.style.boxShadow='0 2px 8px rgba(102, 126, 234, 0.15)';"
+             onmouseout="this.style.borderColor='#e5e7eb'; this.style.boxShadow='none';">
+          
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+            <div>
+              <p style="margin: 0 0 4px 0; font-weight: 700; font-size: 14px; color: #1f2937;">${this.escapeHtml(customer.company_name)}</p>
+              <p style="margin: 0; font-size: 11px; color: #6b7280;">ID: ${customerId}</p>
+            </div>
+            <span style="background: #667eea; color: white; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 700;">CUSTOMER</span>
+          </div>
+
+          <div style="background: #f9fafb; padding: 10px; border-radius: 6px; margin-bottom: 10px; font-size: 12px; line-height: 1.6;">
+            <p style="margin: 0 0 4px 0;"><strong>👤</strong> ${this.escapeHtml(customer.contact_person)}</p>
+            <p style="margin: 0 0 4px 0;"><strong>📱</strong> ${this.escapeHtml(customer.mobile)}</p>
+            ${customer.email ? `<p style="margin: 0;"><strong>📧</strong> ${this.escapeHtml(customer.email)}</p>` : ''}
+          </div>
+
+          <div style="font-size: 10px; color: #6b7280; margin-bottom: 10px;">
+            <strong>Created:</strong> ${createdDate}
+          </div>
+
+          <button type="button" onclick="event.stopPropagation(); window.app.selectCustomerFromList('${customer.id}')" style="width: 100%; padding: 8px; background: #667eea; color: white; border: none; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#5568d3';" onmouseout="this.style.background='#667eea';">
+            ✓ Select for Sale
+          </button>
+        </div>
+      `;
+    }).join('');
+
+    container.innerHTML = html;
+
+    const countDisplay = document.getElementById('customerCountDisplay');
+    if (countDisplay) {
+      countDisplay.textContent = this.customers.length;
+    }
+  }
+
+  selectCustomerFromList(customerId) {
+    console.log('✅ Selecting customer:', customerId);
+    const select = document.getElementById('saleCustomer');
+    if (select) {
+      select.value = customerId;
+      const event = new Event('change', { bubbles: true });
+      select.dispatchEvent(event);
+
+      // Scroll to top smoothly
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+
+  refreshCustomerList() {
+    console.log('🔄 Refreshing customer list...');
+    this.loadSalesData();
+    setTimeout(() => {
+      this.renderCustomerListInSales();
+    }, 300);
+  }
+
+  async handleCustomerFormSubmit(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('💾 Saving customer...');
+
+    const company = document.getElementById('customerCompany').value.trim();
+    const contact = document.getElementById('customerContact').value.trim();
+    const email = document.getElementById('customerEmail').value.trim();
+    const mobile = document.getElementById('customerMobile').value.trim();
+    const location = document.getElementById('customerLocation').value.trim();
+    const notes = document.getElementById('customerNotes').value.trim();
+
+    const errorMsg = document.getElementById('customerErrorMsg');
+    errorMsg.textContent = '';
+
+    if (!company) {
+      errorMsg.textContent = '❌ Company name is required';
+      return;
+    }
+
+    const customerData = {
+      company_name: company,
+      contact_person: contact,
+      email,
+      mobile,
+      location,
+      notes
+    };
+
+    try {
+      let result;
+      let newCustomerId = null;
+
+      if (this.editingCustomerId) {
+        console.log('✏️ Updating customer:', this.editingCustomerId);
+        result = await customersModule.updateCustomer(this.editingCustomerId, customerData);
+        newCustomerId = this.editingCustomerId;
+      } else {
+        console.log('➕ Creating new customer');
+        result = await customersModule.createCustomer(customerData);
+        newCustomerId = result.id;
+      }
+
+      if (!result.success) {
+        errorMsg.textContent = `❌ ${result.error || 'Failed to save customer'}`;
+        return;
+      }
+
+      console.log('✅ Customer saved successfully, ID:', newCustomerId);
+
+      this.showConfirm(
+        'Success',
+        `✓ Customer "${company}" ${this.editingCustomerId ? 'updated' : 'created'} successfully!`,
+        async () => {
+          this.closeCustomerModal();
+          this.editingCustomerId = null;
+
+          // Reload customers
+          console.log('🔄 Reloading customers list...');
+          await this.loadCustomers();
+          console.log('✅ Customers reloaded, total:', this.customers.length);
+
+          // If on sales page, refresh customer dropdown and auto-select new customer
+          if (this.currentPage === 'sales') {
+            console.log('📝 Refreshing customer dropdown on sales page');
+            this.refreshCustomerDropdown(newCustomerId);
+          }
+
+          // If on customers page, refresh list
+          if (this.currentPage === 'customers' && window.customersPageModule) {
+            customersPageModule.loadCustomers(this);
+          }
+        }
+      );
+    } catch (error) {
+      console.error('❌ Error saving customer:', error);
+      errorMsg.textContent = `❌ ${error.message || 'An error occurred. Please try again.'}`;
+    }
+  }
+
+  // New method to refresh customer dropdown
+  refreshCustomerDropdown(selectCustomerId = null) {
+    const customerSelect = document.getElementById('saleCustomer');
+    if (!customerSelect) {
+      console.warn('⚠️ Customer dropdown not found');
+      return;
+    }
+
+    console.log('🔄 Refreshing customer dropdown with', this.customers.length, 'customers');
+
+    // Save current value if not selecting a new one
+    const currentValue = selectCustomerId || customerSelect.value;
+
+    // Rebuild options
+    customerSelect.innerHTML = '<option value="">-- Select Customer --</option>';
+
+    this.customers.forEach(customer => {
+      const option = document.createElement('option');
+      option.value = customer.id;
+      option.textContent = `${customer.company_name} (${customer.contact_person || 'N/A'})`;
+      customerSelect.appendChild(option);
+    });
+
+    // Select the customer (new or previously selected)
+    if (currentValue) {
+      customerSelect.value = currentValue;
+      console.log('✅ Auto-selected customer:', currentValue);
+
+      // Trigger change event to update customer details
+      customerSelect.dispatchEvent(new Event('change'));
+    }
+
+    console.log('✅ Customer dropdown refreshed');
+  }
+
+  closeCustomerModal() {
+    ui.closeModal('customerModal');
+    document.getElementById('customerForm').reset();
+    document.getElementById('customerErrorMsg').textContent = '';
+    this.editingCustomerId = null;
+    console.log('✅ Customer modal closed');
+  }
+
+  async saveCustomer(customerData) {
+    try {
+      console.log('💾 Saving customer:', customerData);
+      const result = await customersModule.createCustomer(customerData);
+
+      if (!result.success) {
+        this.showConfirm('❌ Error', result.error || 'Failed to add customer');
+        return;
+      }
+
+      console.log('✅ Customer saved successfully');
+
+      // Reset form
+      const customerForm = document.getElementById('customerForm');
+      if (customerForm) customerForm.reset();
+
+      const customerErrorMsg = document.getElementById('customerErrorMsg');
+      if (customerErrorMsg) customerErrorMsg.innerHTML = '';
+
+      const companyWarning = document.getElementById('companyDuplicateWarning');
+      const emailWarning = document.getElementById('emailWarning');
+      const mobileWarning = document.getElementById('mobileWarning');
+
+      if (companyWarning) companyWarning.style.display = 'none';
+      if (emailWarning) emailWarning.style.display = 'none';
+      if (mobileWarning) mobileWarning.style.display = 'none';
+
+      this.showConfirm(
+        '✅ Customer Added',
+        `✓ "${customerData.company_name}" created successfully!\n\nID: ${result.id}\nCreated by: ${this.currentUser.username}`,
+        () => {
+          this.loadSalesData();
+          setTimeout(() => {
+            this.renderCustomerListInSales();
+            this.updateCustomerDropdown();
+          }, 500);
+        }
+      );
+    } catch (e) {
+      console.error('❌ Save customer error:', e);
+      this.showConfirm('Error', `Network error: ${e.message}`);
+    }
+  }
+
+  isValidEmail(email) {
+    if (!email) return true;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  }
+
+  // ========== PRODUCT MANAGEMENT ==========
+  openAddProduct() {
+    console.log('📦 Opening Add Product Modal');
+    this.editingProductId = null;
+
+    document.getElementById('productModalTitle').textContent = 'Add New Product';
+    document.getElementById('productForm').reset();
+    document.getElementById('productErrorMsg').textContent = '';
+
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('productEntryDate').value = today;
+
+    this.updateCategoryDropdown();
+    document.getElementById('productSubmitBtn').textContent = 'Add Product';
+
+    ui.openModal('productModal');
+  }
+
+  closeProductModal() {
+    ui.closeModal('productModal');
+    document.getElementById('productForm').reset();
+    document.getElementById('productErrorMsg').textContent = '';
+  }
+
+  async handleAddProduct(e) {
+    e.preventDefault();
+    console.log('💾 Saving product...');
+
+    const product_id = document.getElementById('productId').value.trim();
+    const name = document.getElementById('productName').value.trim();
+    const description = document.getElementById('productDescription').value.trim();
+    const category_id = document.getElementById('productCategory').value;
+    const stock = parseInt(document.getElementById('productStock').value);
+    const unit_price = parseFloat(document.getElementById('productUnitPrice').value);
+    const created_at = document.getElementById('productEntryDate').value;
+
+    const errorMsg = document.getElementById('productErrorMsg');
+    errorMsg.textContent = '';
+
+    if (!product_id || !name || !category_id || isNaN(stock) || isNaN(unit_price)) {
+      errorMsg.textContent = '❌ Please fill in all required fields';
+      return;
+    }
+
+    if (stock < 0 || unit_price < 0) {
+      errorMsg.textContent = '❌ Stock and price cannot be negative';
+      return;
+    }
+
+    try {
+      let result;
+      if (this.editingProductId) {
+        result = await productsModule.updateProduct(this.editingProductId, {
+          product_id, name, description, category_id, stock, unit_price, created_at
+        });
+      } else {
+        result = await productsModule.createProduct({
+          product_id, name, description, category_id, stock, unit_price, created_at
+        });
+      }
+
+      if (!result.success) {
+        errorMsg.textContent = result.error;
+        return;
+      }
+
+      console.log('✅ Product saved successfully');
+      this.showConfirm(
+        'Success',
+        `✓ Product "${name}" ${this.editingProductId ? 'updated' : 'added'} successfully!`,
+        async () => {
+          this.closeProductModal();
+          await this.loadProducts();
+          if (this.currentPage === 'products') {
+            productsPageModule.loadProducts(this);
+          }
+        }
+      );
+    } catch (error) {
+      console.error('❌ Error saving product:', error);
+      errorMsg.textContent = 'An error occurred. Please try again.';
+    }
+  }
+
+  updateCategoryDropdown() {
+    const select = document.getElementById('productCategory');
+    if (!select) return;
+
+    select.innerHTML = '<option value="">Select Category</option>';
+
+    const sortedCategories = [...this.categories].sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+
+    sortedCategories.forEach(cat => {
+      const option = document.createElement('option');
+      option.value = cat.id;
+      option.textContent = cat.name;
+      select.appendChild(option);
+    });
+  }
+
+  openEditProduct(id) {
+    const product = this.products.find(p => p.id === id);
+    if (!product) return;
+
+    this.editingProductId = id;
+    document.getElementById('productModalTitle').textContent = 'Edit Product';
+    document.getElementById('productCategory').value = product.category_id;
+    document.getElementById('productId').value = product.product_id;
+    document.getElementById('productName').value = product.name;
+    document.getElementById('productDescription').value = product.description || '';
+    document.getElementById('productStock').value = product.stock;
+    document.getElementById('productUnitPrice').value = product.unit_price;
+    document.getElementById('productEntryDate').value = new Date(product.created_at).toISOString().split('T')[0];
+    document.getElementById('productSubmitBtn').textContent = 'Update Product';
+    document.getElementById('productErrorMsg').textContent = '';
+
+    this.updateCategoryDropdown();
+
+    ui.openModal('productModal');
+  }
+
+  deleteProductConfirm(id, name) {
+    this.showConfirm(
+      'Delete Product',
+      `Are you sure you want to delete "${name}"?\n\nThis action cannot be undone.`,
+      () => this.deleteProduct(id)
+    );
+  }
+
+  async deleteProduct(id) {
+    try {
+      const result = await productsModule.deleteProduct(id);
+
+      if (!result.success) {
+        this.showConfirm('Error', result.error);
+        return;
+      }
+
+      this.showConfirm('Success', '✓ Product deleted successfully!', async () => {
+        await this.loadProducts();
+        if (this.currentPage === 'products') {
+          productsPageModule.loadProducts(this);
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error deleting product:', error);
+    }
+  }
+
+  // ========== MESSAGING METHODS ==========
+  openConversation(conversationId) {
+    console.log('📂 Opening conversation:', conversationId);
+    if (window.messagingPageModule) {
+      messagingPageModule.openConversation(this, conversationId);
+    }
+  }
+
+  openNewChatModal() {
+    console.log('💬 Opening new chat modal');
+    ui.openModal('newChatModal');
+    this.loadUsersForNewChat();
+  }
+
+  closeNewChatModal() {
+    ui.closeModal('newChatModal');
+    document.getElementById('newChatForm').reset();
+    document.getElementById('newChatErrorMsg').textContent = '';
+  }
+
+  async loadUsersForNewChat() {
+    try {
+      const res = await fetch('/api/users', { credentials: 'same-origin' });
+      const data = await res.json();
+
+      if (!res.ok) return;
+
+      const users = data.users || [];
+      const container = document.getElementById('newChatUsersList');
+      if (!container) return;
+
+      const html = users
+        .filter(u => u.id !== this.currentUser.id)
+        .map(user => `
+          <label style="display: flex; align-items: center; padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='white'">
+            <input type="checkbox" name="participants" value="${user.id}" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+            <div>
+              <p style="margin: 0 0 2px 0; font-weight: 600; font-size: 14px; color: #1f2937;">${this.escapeHtml(user.full_name || user.username)}</p>
+              <p style="margin: 0; font-size: 12px; color: #6b7280;">@${this.escapeHtml(user.username)} • ${user.role.toUpperCase()}</p>
+            </div>
+          </label>
+        `).join('');
+
+      container.innerHTML = html || '<p style="text-align: center; padding: 20px; color: #6b7280;">No users available</p>';
+    } catch (error) {
+      console.error('Error loading users:', error);
+    }
+  }
+
+  async handleNewChatSubmit(e) {
+    e.preventDefault();
+    console.log('💾 Creating new chat...');
+
+    const chatName = document.getElementById('newChatName').value.trim();
+    const checkboxes = document.querySelectorAll('input[name="participants"]:checked');
+    const participantIds = Array.from(checkboxes).map(cb => cb.value);
+    const errorMsg = document.getElementById('newChatErrorMsg');
+
+    errorMsg.textContent = '';
+
+    if (participantIds.length === 0) {
+      errorMsg.textContent = '❌ Please select at least one person';
+      return;
+    }
+
+    try {
+      const result = await messagingModule.createConversation(participantIds, chatName || null);
+
+      if (!result.success) {
+        errorMsg.textContent = `❌ ${result.error || 'Failed to create chat'}`;
+        return;
+      }
+
+      console.log('✅ Chat created successfully');
+      this.showConfirm(
+        'Success',
+        `✓ Chat created successfully!${chatName ? `\n\nChat name: ${chatName}` : ''}`,
+        () => {
+          this.closeNewChatModal();
+          if (this.currentPage === 'messaging' && window.messagingPageModule) {
+            messagingPageModule.loadConversations(this);
+          }
+        }
+      );
+    } catch (error) {
+      console.error('❌ Error creating chat:', error);
+      errorMsg.textContent = `❌ Network error: ${error.message}`;
+    }
+  }
+
+  openAddParticipantModal() {
+    console.log('➕ Opening add participant modal');
+    if (!window.messagingPageModule || !messagingPageModule.currentConversationId) {
+      this.showConfirm('Error', 'No conversation selected');
+      return;
+    }
+    ui.openModal('addParticipantModal');
+    this.loadUsersForAddParticipant();
+  }
+
+  closeAddParticipantModal() {
+    ui.closeModal('addParticipantModal');
+    document.getElementById('addParticipantForm').reset();
+    document.getElementById('addParticipantErrorMsg').textContent = '';
+  }
+
+  async loadUsersForAddParticipant() {
+    try {
+      const res = await fetch('/api/users', { credentials: 'same-origin' });
+      const data = await res.json();
+
+      if (!res.ok) return;
+
+      const users = data.users || [];
+
+      // Get current participants
+      const conversationId = messagingPageModule.currentConversationId;
+      const participantsResult = await messagingModule.getParticipants(conversationId);
+      const currentParticipantIds = participantsResult.participants.map(p => p.id);
+
+      const container = document.getElementById('addParticipantUsersList');
+      if (!container) return;
+
+      const html = users
+        .filter(u => u.id !== this.currentUser.id && !currentParticipantIds.includes(u.id))
+        .map(user => `
+          <label style="display: flex; align-items: center; padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='white'">
+            <input type="radio" name="new_participant" value="${user.id}" style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+            <div>
+              <p style="margin: 0 0 2px 0; font-weight: 600; font-size: 14px; color: #1f2937;">${this.escapeHtml(user.full_name || user.username)}</p>
+              <p style="margin: 0; font-size: 12px; color: #6b7280;">@${this.escapeHtml(user.username)} • ${user.role.toUpperCase()}</p>
+            </div>
+          </label>
+        `).join('');
+
+      container.innerHTML = html || '<p style="text-align: center; padding: 20px; color: #6b7280;">All users are already in this conversation</p>';
+    } catch (error) {
+      console.error('Error loading users:', error);
+    }
+  }
+
+  async handleAddParticipantSubmit(e) {
+    e.preventDefault();
+    console.log('➕ Adding participant...');
+
+    const selectedRadio = document.querySelector('input[name="new_participant"]:checked');
+    const errorMsg = document.getElementById('addParticipantErrorMsg');
+
+    errorMsg.textContent = '';
+
+    if (!selectedRadio) {
+      errorMsg.textContent = '❌ Please select a person to add';
+      return;
+    }
+
+    const userId = selectedRadio.value;
+    const conversationId = messagingPageModule.currentConversationId;
+
+    try {
+      const result = await messagingModule.addParticipant(conversationId, userId);
+
+      if (!result.success) {
+        errorMsg.textContent = `❌ ${result.error || 'Failed to add participant'}`;
+        return;
+      }
+
+      console.log('✅ Participant added successfully');
+      this.showConfirm(
+        'Success',
+        '✓ Person added to conversation!',
+        () => {
+          this.closeAddParticipantModal();
+          if (window.messagingPageModule) {
+            messagingPageModule.loadConversations(this);
+          }
+        }
+      );
+    } catch (error) {
+      console.error('❌ Error adding participant:', error);
+      errorMsg.textContent = `❌ Network error: ${error.message}`;
+    }
+  }
+
+  openFileUploadModal() {
+    console.log('📎 File upload modal (not implemented yet)');
+    this.showConfirm('Coming Soon', 'File upload feature will be available in the next update!');
+  }
+
+  insertEmoji(emoji) {
+    const input = document.getElementById('messageInput');
+    if (input) {
+      input.value += emoji;
+      input.focus();
+    }
+  }
+
+  // ========== STOCK MANAGEMENT ==========
+  openUpdateStock(id) {
+    console.log('📦 Opening Update Stock Modal for:', id);
+
+    const product = this.products.find(p => p.id === id);
+    if (!product) {
+      console.error('❌ Product not found:', id);
+      return;
+    }
+
+    this.editingProductId = id;
+
+    // Populate the form
+    document.getElementById('stockProductId').value = product.product_id;
+    document.getElementById('stockProductName').value = product.name;
+    document.getElementById('stockProductCategory').value = product.category_name || 'Unknown';
+    document.getElementById('stockCurrent').value = product.stock;
+    document.getElementById('stockNewQuantity').value = '';
+    document.getElementById('stockNotes').value = '';
+    document.getElementById('stockErrorMsg').textContent = '';
+
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('stockUpdateDate').value = today;
+
+    ui.openModal('stockModal');
+  }
+
+  closeStockModal() {
+    ui.closeModal('stockModal');
+    document.getElementById('stockForm').reset();
+    document.getElementById('stockErrorMsg').textContent = '';
+    this.editingProductId = null;
+  }
+
+  async handleUpdateStock(e) {
+    e.preventDefault();
+    console.log('💾 Updating stock...');
+
+    if (!this.editingProductId) {
+      console.error('❌ No product selected');
+      this.showConfirm('Error', 'No product selected');
+      return;
+    }
+
+    const product = this.products.find(p => p.id === this.editingProductId);
+    if (!product) {
+      console.error('❌ Product not found');
+      return;
+    }
+
+    const quantityInput = document.getElementById('stockNewQuantity').value.trim();
+    const updateDate = document.getElementById('stockUpdateDate').value.trim();
+    const notes = document.getElementById('stockNotes').value.trim();
+
+    const errorMsg = document.getElementById('stockErrorMsg');
+    errorMsg.textContent = '';
+
+    // Validation
+    if (!quantityInput) {
+      errorMsg.textContent = '❌ Quantity change is required';
+      return;
+    }
+
+    const quantityChange = parseInt(quantityInput);
+
+    if (isNaN(quantityChange)) {
+      errorMsg.textContent = '❌ Quantity must be a valid number (use - for subtraction)';
+      return;
+    }
+
+    if (quantityChange === 0) {
+      errorMsg.textContent = '❌ Quantity change cannot be zero';
+      return;
+    }
+
+    if (!updateDate) {
+      errorMsg.textContent = '❌ Update date is required';
+      return;
+    }
+
+    const currentStock = product.stock;
+    const newStock = currentStock + quantityChange;
+
+    if (newStock < 0) {
+      errorMsg.textContent = '❌ Cannot reduce stock below 0';
+      return;
+    }
+
+    const action = quantityChange > 0 ? `Add ${quantityChange}` : `Remove ${Math.abs(quantityChange)}`;
+
+    this.showConfirm(
+      'Confirm Stock Update',
+      `${action} to stock for "${product.product_id}"?\n\nCurrent: ${currentStock}\nChange: ${quantityChange > 0 ? '+' : ''}${quantityChange}\nNew: ${newStock}\n\n${notes ? 'Notes: ' + notes : ''}`,
+      () => {
+        this.saveStockUpdate(newStock, updateDate, notes);
+      }
+    );
+  }
+
+  async saveStockUpdate(newStock, updateDate, notes) {
+    try {
+      console.log('💾 Saving stock update:', { newStock, updateDate, notes });
+
+      const result = await productsModule.updateStock(this.editingProductId, newStock, notes);
+
+      if (!result.success) {
+        this.showConfirm('Error', result.error || 'Failed to update stock');
+        return;
+      }
+
+      const product = this.products.find(p => p.id === this.editingProductId);
+
+      console.log('✅ Stock updated successfully');
+      this.showConfirm(
+        'Success',
+        `✓ Stock updated successfully for "${product.product_id}"!\n\nNew stock: ${newStock}`,
+        async () => {
+          this.closeStockModal();
+          await this.loadProducts();
+          if (this.currentPage === 'products') {
+            productsPageModule.loadProducts(this);
+            // Reload stock movements to show the new update immediately
+            setTimeout(() => {
+              if (window.productsPageModule && typeof productsPageModule.loadStockMovements === 'function') {
+                productsPageModule.loadStockMovements(this);
+              }
+            }, 500);
+          }
+        }
+      );
+    } catch (e) {
+      console.error('❌ Error saving stock update:', e);
+      this.showConfirm('Error', `Network error: ${e.message}`);
+    }
+  }
+
+  // ========== CATEGORY MANAGEMENT ==========
+  openCategories() {
+    console.log('📋 Opening Categories Modal');
+    this.cleanCategoriesModal();
+    ui.openModal('categoriesModal');
+    this.loadCategoriesList();
+  }
+
+  closeCategoriesModal() {
+    ui.closeModal('categoriesModal');
+    this.cleanCategoriesModal();
+  }
+
+  cleanCategoriesModal() {
+    const nameInput = document.getElementById('categoryName');
+    const descInput = document.getElementById('categoryDescription');
+    const errorMsg = document.getElementById('categoryErrorMsg');
+
+    if (nameInput) nameInput.value = '';
+    if (descInput) descInput.value = '';
+    if (errorMsg) errorMsg.textContent = '';
+  }
+
+  async loadCategoriesList() {
+    try {
+      await this.loadCategories();
+
+      const sortedCategories = [...this.categories].sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+
+      const html = sortedCategories.map((c) => {
+        return `
+          <div class="category-item">
+            <div class="category-item-info">
+              <p class="category-item-name">${this.escapeHtml(c.name)}</p>
+              <p class="category-item-desc">${this.escapeHtml(c.description || 'No description')}</p>
+            </div>
+            <div class="category-item-actions">
+              <button class="btn-small btn-edit" type="button" onclick="window.app.editCategory('${c.id}')">Edit</button>
+              <button class="btn-small btn-delete" type="button" onclick="window.app.deleteCategoryConfirm('${c.id}', '${this.escapeHtml(c.name).replace(/'/g, "\\'")}')">Delete</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      const listContainer = document.getElementById('categoriesList');
+      if (listContainer) {
+        listContainer.innerHTML = html || '<p style="color: #6b7280; text-align: center; padding: 20px;">No categories yet</p>';
+      }
+
+      const categoryCount = document.getElementById('categoryCount');
+      if (categoryCount) {
+        categoryCount.textContent = this.categories.length;
+      }
+    } catch (e) {
+      console.error('❌ Error loading categories:', e);
+    }
+  }
+
+  async handleAddCategory(e) {
+    e.preventDefault();
+    console.log('💾 Saving category...');
+
+    const categoryNameInput = document.getElementById('categoryName');
+    const categoryDescInput = document.getElementById('categoryDescription');
+    const errorMsg = document.getElementById('categoryErrorMsg');
+
+    const name = categoryNameInput.value.trim();
+    const description = categoryDescInput.value.trim();
+
+    if (errorMsg) errorMsg.textContent = '';
+
+    if (!name) {
+      if (errorMsg) errorMsg.textContent = '❌ Category name is required';
+      return;
+    }
+
+    if (name.length < 2) {
+      if (errorMsg) errorMsg.textContent = '❌ Category name must be at least 2 characters';
+      return;
+    }
+
+    try {
+      const result = await categoriesModule.createCategory({ name, description });
+
+      if (!result.success) {
+        if (errorMsg) errorMsg.textContent = `❌ ${result.error}`;
+        return;
+      }
+
+      console.log('✅ Category saved successfully');
+      this.showConfirm(
+        'Success',
+        `✓ Category "${name}" added successfully!`,
+        () => {
+          categoryNameInput.value = '';
+          categoryDescInput.value = '';
+          if (errorMsg) errorMsg.textContent = '';
+          this.loadCategoriesList();
+          this.loadProducts();
+        }
+      );
+    } catch (e) {
+      console.error('❌ Error saving category:', e);
+      if (errorMsg) errorMsg.textContent = `❌ Network error: ${e.message}`;
+    }
+  }
+
+  editCategory(id) {
+    console.log('✏️ Opening Edit Category Modal for:', id);
+
+    const category = this.categories.find(c => c.id === id);
+    if (!category) {
+      console.error('❌ Category not found:', id);
+      return;
+    }
+
+    // Store the editing category ID
+    this.editingCategoryId = id;
+
+    // Populate the form
+    document.getElementById('editCategoryName').value = category.name;
+    document.getElementById('editCategoryDescription').value = category.description || '';
+    document.getElementById('editCategoryErrorMsg').textContent = '';
+
+    // Open the modal
+    ui.openModal('editCategoryModal');
+  }
+
+  closeEditCategoryModal() {
+    ui.closeModal('editCategoryModal');
+    document.getElementById('editCategoryForm').reset();
+    document.getElementById('editCategoryErrorMsg').textContent = '';
+    this.editingCategoryId = null;
+  }
+
+  async handleEditCategory(e) {
+    e.preventDefault();
+    console.log('💾 Updating category...');
+
+    if (!this.editingCategoryId) {
+      console.error('❌ No category ID for editing');
+      return;
+    }
+
+    const nameInput = document.getElementById('editCategoryName');
+    const descInput = document.getElementById('editCategoryDescription');
+    const errorMsg = document.getElementById('editCategoryErrorMsg');
+
+    const name = nameInput.value.trim();
+    const description = descInput.value.trim();
+
+    errorMsg.textContent = '';
+
+    // Validation
+    if (!name) {
+      errorMsg.textContent = '❌ Category name is required';
+      nameInput.focus();
+      return;
+    }
+
+    if (name.length < 2) {
+      errorMsg.textContent = '❌ Category name must be at least 2 characters';
+      nameInput.focus();
+      return;
+    }
+
+    // Check for duplicates (excluding current category)
+    const duplicate = this.categories.find(c =>
+      c.id !== this.editingCategoryId &&
+      c.name.toLowerCase().trim() === name.toLowerCase().trim()
+    );
+
+    if (duplicate) {
+      errorMsg.textContent = `❌ Category "${name}" already exists`;
+      nameInput.focus();
+      return;
+    }
+
+    try {
+      const result = await categoriesModule.updateCategory(this.editingCategoryId, {
+        name: name,
+        description: description
+      });
+
+      if (!result.success) {
+        errorMsg.textContent = `❌ ${result.error || 'Failed to update category'}`;
+        return;
+      }
+
+      console.log('✅ Category updated successfully');
+      this.showConfirm(
+        'Success',
+        `✓ Category updated to "${name}" successfully!`,
+        () => {
+          this.closeEditCategoryModal();
+          this.loadCategoriesList();
+          this.loadProducts();
+        }
+      );
+    } catch (e) {
+      console.error('❌ Error updating category:', e);
+      errorMsg.textContent = `❌ Network error: ${e.message}`;
+    }
+  }
+
+  deleteCategoryConfirm(id, name) {
+    const categoryProducts = this.products.filter(p => p.category_id === id);
+
+    if (categoryProducts.length > 0) {
+      this.showConfirm(
+        '⚠️ Cannot Delete Category',
+        `"${name}" has ${categoryProducts.length} product(s).\n\nDelete or move all products first.`
+      );
+      return;
+    }
+
+    this.showConfirm(
+      'Delete Category',
+      `Are you sure you want to delete "${name}"?`,
+      () => this.deleteCategory(id)
+    );
+  }
+
+  async deleteCategory(id) {
+    try {
+      const categoryName = this.categories.find(c => c.id === id)?.name;
+
+      const result = await categoriesModule.deleteCategory(id);
+
+      if (!result.success) {
+        this.showConfirm('Error', result.error || 'Failed to delete category');
+        return;
+      }
+
+      this.showConfirm('Success', `✓ Category "${categoryName}" deleted successfully!`, () => {
+        this.loadCategoriesList();
+        this.loadProducts();
+      });
+    } catch (e) {
+      this.showConfirm('Error', `Network error: ${e.message}`);
+    }
+  }
+
+  escapeHtml(text) {
+    if (!text) return '';
+    const map = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    };
+    return String(text).replace(/[&<>"']/g, m => map[m]);
+  }
+
+  // ========== ROLE MANAGEMENT METHODS ==========
+
+  openCreateRoleModal() {
+    console.log('🔐 Opening Create Role Modal');
+    document.getElementById('createRoleForm').reset();
+    document.getElementById('createRoleErrorMsg').textContent = '';
+    ui.openModal('createRoleModal');
+  }
+
+  closeCreateRoleModal() {
+    console.log('🚪 Closing Create Role Modal');
+    ui.closeModal('createRoleModal');
+    document.getElementById('createRoleForm').reset();
+    document.getElementById('createRoleErrorMsg').textContent = '';
+  }
+
+  openEditRoleModal(roleId) {
+    console.log('✏️ ========== OPEN EDIT ROLE MODAL ==========');
+    console.log('🆔 Role ID:', roleId);
+
+    const role = this.roles.find(r => r.id === roleId);
+    if (!role) {
+      console.error('❌ Role not found:', roleId);
+      this.showConfirm('Error', 'Role not found');
+      return;
+    }
+
+    console.log('✓ Role found:', role.display_name);
+
+    // Populate form
+    document.getElementById('editRoleId').value = roleId;
+    document.getElementById('editRoleName').value = role.name;
+    document.getElementById('editRoleDisplayName').value = role.display_name || '';
+    document.getElementById('editRoleDescription').value = role.description || '';
+    document.getElementById('editRoleErrorMsg').textContent = '';
+
+    // Populate permissions
+    const permissionsContainer = document.getElementById('editRolePermissionsContainer');
+    const allPermissions = [
+      { id: 'dashboard', icon: '📊', name: 'Dashboard', desc: 'View statistics and overview' },
+      { id: 'sales', icon: '💰', name: 'Sales', desc: 'Create and manage sales transactions' },
+      { id: 'messaging', icon: '💬', name: 'Messaging', desc: 'Chat with team members' },
+      { id: 'products', icon: '📦', name: 'Item Management', desc: 'Manage products and inventory' },
+      { id: 'customers', icon: '👥', name: 'Customers', desc: 'Manage customer information' },
+      { id: 'users', icon: '👤', name: 'User Management', desc: 'Manage users and roles' },
+      { id: 'settings', icon: '⚙️', name: 'Settings', desc: 'Configure system settings' }
+    ];
+
+    const rolePermissions = Array.isArray(role.permissions) ? role.permissions : [];
+
+    const html = allPermissions.map(perm => {
+      const isChecked = rolePermissions.includes(perm.id);
+      return `
+        <label style="display: flex; align-items: center; padding: 10px; margin-bottom: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='transparent'">
+          <input type="checkbox" name="edit_role_permissions" value="${perm.id}" ${isChecked ? 'checked' : ''} style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+          <span style="font-size: 20px; margin-right: 8px;">${perm.icon}</span>
+          <div>
+            <p style="margin: 0; font-weight: 600; font-size: 14px; color: #1f2937;">${perm.name}</p>
+            <p style="margin: 0; font-size: 12px; color: #6b7280;">${perm.desc}</p>
+          </div>
+        </label>
+      `;
+    }).join('');
+
+    permissionsContainer.innerHTML = html;
+
+    ui.openModal('editRoleModal');
+    console.log('✅ Edit role modal opened');
+  }
+
+  closeEditRoleModal() {
+    console.log('🚪 Closing Edit Role Modal');
+
+    if (window.ui && typeof window.ui.closeModal === 'function') {
+      window.ui.closeModal('editRoleModal');
+    } else {
+      const modal = document.getElementById('editRoleModal');
+      if (modal) {
+        modal.style.display = 'none';
+        modal.classList.remove('active');
+      }
+    }
+
+    const editRoleForm = document.getElementById('editRoleForm');
+    if (editRoleForm) {
+      editRoleForm.reset();
+    }
+
+    const errorMsg = document.getElementById('editRoleErrorMsg');
+    if (errorMsg) {
+      errorMsg.textContent = '';
+    }
+
+    const permissionsContainer = document.getElementById('editRolePermissionsContainer');
+    if (permissionsContainer) {
+      permissionsContainer.innerHTML = '';
+    }
+
+    console.log('✅ Edit Role Modal closed');
+  }
+
+  closeRoleModal() {
+    // Legacy method - redirects to closeEditRoleModal
+    this.closeEditRoleModal();
+  }
+
+  async handleCreateRoleSubmit(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('💾 ========== CREATE ROLE START ==========');
+
+    const roleName = document.getElementById('roleName')?.value.trim();
+    const displayName = document.getElementById('roleDisplayName')?.value.trim();
+    const description = document.getElementById('roleDescription')?.value.trim();
+
+    const permissionCheckboxes = document.querySelectorAll('input[name="role_permissions"]:checked');
+    const permissions = Array.from(permissionCheckboxes).map(cb => cb.value);
+
+    const errorMsg = document.getElementById('createRoleErrorMsg');
+    if (errorMsg) errorMsg.textContent = '';
+
+    if (!roleName || !displayName || permissions.length === 0) {
+      const msg = '❌ Role name, display name, and at least one permission are required';
+      console.error(msg);
+      if (errorMsg) errorMsg.textContent = msg;
+      return;
+    }
+
+    if (!/^[a-z_]+$/.test(roleName)) {
+      const msg = '❌ Role name must contain only lowercase letters and underscores';
+      console.error(msg);
+      if (errorMsg) errorMsg.textContent = msg;
+      return;
+    }
+
+    const roleData = {
+      name: roleName,
+      display_name: displayName,
+      permissions: permissions,
+      description: description || ''
+    };
+
+    try {
+      const res = await fetch('/api/roles', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify(roleData)
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        console.error('❌ Create failed:', data.error);
+        if (errorMsg) errorMsg.textContent = `❌ ${data.error}`;
+        return;
+      }
+
+      console.log('✅ Role created successfully');
+      this.closeCreateRoleModal();
+
+      if (this.currentPage === 'users' && window.usersPageModule) {
+        await window.usersPageModule.loadRoles(this);
+      }
+
+      setTimeout(() => {
+        this.showConfirm('Success', `✓ Role "${displayName}" created successfully!`);
+      }, 300);
+
+    } catch (error) {
+      console.error('❌ Error in handleCreateRoleSubmit:', error);
+      if (errorMsg) {
+        errorMsg.textContent = `❌ ${error.message || 'An error occurred'}`;
+      }
+    }
+  }
+
+  async handleEditRoleSubmit(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('💾 ========== UPDATE ROLE VALIDATION START ==========');
+    console.log('📅 Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted):', new Date().toISOString().replace('T', ' ').substring(0, 19));
+    console.log("👤 Current user's login:", 'itqatarfoam-hub');
+
+    const roleId = document.getElementById('editRoleId')?.value;
+    const displayName = document.getElementById('editRoleDisplayName')?.value.trim();
+    const description = document.getElementById('editRoleDescription')?.value.trim();
+
+    const permissionCheckboxes = document.querySelectorAll('input[name="edit_role_permissions"]:checked');
+    const permissions = Array.from(permissionCheckboxes).map(cb => cb.value);
+
+    const errorMsg = document.getElementById('editRoleErrorMsg');
+    if (errorMsg) errorMsg.textContent = '';
+
+    console.log('📝 Edit role form values:', {
+      roleId,
+      displayName,
+      permissions,
+      description
+    });
+
+    // Validation
+    if (!roleId) {
+      const msg = '❌ Role ID missing';
+      console.error(msg);
+      if (errorMsg) errorMsg.textContent = msg;
+      return;
+    }
+
+    if (!displayName || permissions.length === 0) {
+      const msg = '❌ Display name and at least one permission are required';
+      console.error(msg);
+      if (errorMsg) errorMsg.textContent = msg;
+      return;
+    }
+
+    // Find the role being edited
+    const role = this.roles.find(r => r.id === roleId);
+    if (!role) {
+      const msg = '❌ Role not found';
+      console.error(msg);
+      if (errorMsg) errorMsg.textContent = msg;
+      return;
+    }
+
+    console.log('✅ Validation passed');
+
+    // Format permissions for display
+    const permissionIcons = {
+      dashboard: '📊 Dashboard',
+      sales: '💰 Sales',
+      messaging: '💬 Messaging',
+      products: '📦 Item Management',
+      customers: '👥 Customers',
+      users: '👤 User Management',
+      settings: '⚙️ Settings'
+    };
+
+    const permissionsList = permissions.map(p => permissionIcons[p] || p).join('\n');
+
+    // Check if it's the current user's role
+    const isCurrentUserRole = role.name === this.currentUser.role;
+    const warningMessage = isCurrentUserRole
+      ? '\n\n⚠️ WARNING: This is YOUR current role.\nChanges will affect your menu immediately!'
+      : '';
+
+    // ⭐ SHOW CONFIRMATION BEFORE DOING ANYTHING ⭐
+    console.log('❓ Showing confirmation dialog...');
+    this.showConfirm(
+      '💾 Confirm Role Update',
+      `Update role "${displayName}"?\n\nPermissions (${permissions.length}):\n${permissionsList}${warningMessage}\n\nThis action will affect all users with this role.`,
+      async () => {
+        // ⭐ User clicked CONFIRM - now save
+        console.log('✅ User confirmed - proceeding with save');
+        await this.saveRoleUpdate(roleId, displayName, description, permissions, role.name);
+      },
+      () => {
+        // ⭐ User clicked CANCEL - do nothing, modal stays open
+        console.log('❌ User cancelled - no changes made');
+      }
+    );
+  }
+
+  // ⭐ SAVE ROLE UPDATE (only called after confirmation) ⭐
+  async saveRoleUpdate(roleId, displayName, description, permissions, roleName) {
+    console.log('💾 ========== SAVE ROLE UPDATE START ==========');
+    console.log('📅 Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted):', new Date().toISOString().replace('T', ' ').substring(0, 19));
+
+    const roleData = {
+      display_name: displayName,
+      permissions: permissions,
+      description: description || ''
+    };
+
+    console.log('📤 Sending update to API:', roleData);
+
+    try {
+      const res = await fetch(`/api/roles/${roleId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify(roleData)
+      });
+
+      console.log('📡 Response status:', res.status);
+      const data = await res.json();
+      console.log('📦 Response data:', data);
+
+      if (!res.ok) {
+        console.error('❌ Update failed:', data.error);
+
+        // Show error but DON'T close modal
+        const errorMsg = document.getElementById('editRoleErrorMsg');
+        if (errorMsg) {
+          errorMsg.textContent = `❌ ${data.error}`;
+        }
+
+        this.showConfirm('Error', `❌ Failed to update role:\n\n${data.error}`);
+        return;
+      }
+
+      console.log('✅ Role updated successfully in database');
+
+      // ⭐ ONLY NOW close the modal
+      console.log('🚪 Closing edit role modal...');
+      this.closeEditRoleModal();
+
+      // ⭐ Reload role configuration
+      console.log('🔄 Reloading role configuration...');
+      await this.loadRoleConfig();
+
+      // ⭐ Re-render sidebar if current user's role was updated
+      const isCurrentUserRole = roleName === this.currentUser.role;
+      if (isCurrentUserRole) {
+        console.log('⚠️ Current user\'s role was updated! Re-rendering entire app...');
+        await this.render();
+        this.attachGlobalListeners();
+      }
+
+      // Reload roles list on users page
+      if (this.currentPage === 'users' && window.usersPageModule) {
+        console.log('🔄 Reloading roles list...');
+        await window.usersPageModule.loadRoles(this);
+      }
+
+      console.log('💾 ========== SAVE ROLE UPDATE COMPLETE ==========\n');
+
+      // ⭐ Show success message (no callback, just info)
+      this.showConfirm(
+        '✅ Success',
+        `Role "${displayName}" updated successfully!${isCurrentUserRole ? '\n\n✓ Your menu has been updated.' : ''}`
+      );
+
+    } catch (error) {
+      console.error('❌ Error saving role update:', error);
+      console.error('Stack:', error.stack);
+
+      // Show error but DON'T close modal
+      const errorMsg = document.getElementById('editRoleErrorMsg');
+      if (errorMsg) {
+        errorMsg.textContent = `❌ Network error: ${error.message}`;
+      }
+
+      this.showConfirm('Error', `❌ Network error:\n\n${error.message}`);
+    }
+  }
+
+  // ⭐ NEW METHOD: Actually save the role update ⭐
+  async saveRoleUpdate(roleId, displayName, description, permissions, roleName) {
+    console.log('💾 ========== SAVE ROLE UPDATE START ==========');
+
+    const roleData = {
+      display_name: displayName,
+      permissions: permissions,
+      description: description || ''
+    };
+
+    console.log('📤 Sending update to API:', roleData);
+
+    try {
+      const res = await fetch(`/api/roles/${roleId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify(roleData)
+      });
+
+      console.log('📡 Response status:', res.status);
+      const data = await res.json();
+      console.log('📦 Response data:', data);
+
+      if (!res.ok) {
+        console.error('❌ Update failed:', data.error);
+        this.showConfirm('Error', `❌ Failed to update role:\n\n${data.error}`);
+        return;
+      }
+
+      console.log('✅ Role updated successfully in database');
+
+      // ⭐ Close modal AFTER successful save
+      this.closeEditRoleModal();
+
+      // ⭐ Reload role configuration
+      console.log('🔄 Reloading role configuration...');
+      await this.loadRoleConfig();
+
+      // ⭐ Re-render sidebar if current user's role was updated
+      const isCurrentUserRole = roleName === this.currentUser.role;
+      if (isCurrentUserRole) {
+        console.log('⚠️ Current user\'s role was updated! Re-rendering entire app...');
+        await this.render();
+        this.attachGlobalListeners();
+      }
+
+      // Reload roles list on users page
+      if (this.currentPage === 'users' && window.usersPageModule) {
+        await window.usersPageModule.loadRoles(this);
+      }
+
+      console.log('💾 ========== SAVE ROLE UPDATE COMPLETE ==========\n');
+
+      // ⭐ Show success message AFTER everything is done
+      setTimeout(() => {
+        this.showConfirm(
+          '✅ Success',
+          `Role "${displayName}" updated successfully!${isCurrentUserRole ? '\n\n✓ Your menu has been updated.' : ''}`
+        );
+      }, 300);
+
+    } catch (error) {
+      console.error('❌ Error saving role update:', error);
+      this.showConfirm('Error', `❌ Network error:\n\n${error.message}`);
+    }
+  }
+
+  deleteRoleConfirm(roleId, roleName) {
+    this.showConfirm(
+      'Delete Role',
+      `Are you sure you want to delete role "${roleName}"?\n\nUsers with this role will need to be reassigned.\n\nThis action cannot be undone.`,
+      () => this.deleteRole(roleId)
+    );
+  }
+
+  async deleteRole(roleId) {
+    try {
+      const res = await fetch(`/api/roles/${roleId}`, {
+        method: 'DELETE',
+        credentials: 'same-origin'
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        this.showConfirm('Error', data.error || 'Failed to delete role');
+        return;
+      }
+
+      this.showConfirm('Success', '✓ Role deleted successfully!', () => {
+        if (this.currentPage === 'users' && window.usersPageModule) {
+          usersPageModule.loadRoles(this);
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error deleting role:', error);
+      this.showConfirm('Error', `Network error: ${error.message}`);
+    }
+  }
+
+  async loadRoleConfig() {
+    console.log('🔐 ========== LOAD ROLE CONFIG START ==========');
+
+    try {
+      const res = await fetch('/api/roles', { credentials: 'same-origin' });
+      const data = await res.json();
+
+      if (!res.ok) {
+        console.error('❌ Failed to load roles');
+        return;
+      }
+
+      this.roles = data.roles || [];
+      console.log('✅ Loaded', this.roles.length, 'roles');
+
+      // Build role access config from database roles
+      const newConfig = {};
+
+      this.roles.forEach(role => {
+        const permissions = Array.isArray(role.permissions) ? role.permissions : [];
+        newConfig[role.name] = permissions;
+        console.log(`  📋 ${role.name}: [${permissions.join(', ')}]`);
+      });
+
+      // Update the config
+      this.roleAccessConfig = newConfig;
+
+      console.log('✅ Role configuration updated');
+      console.log('📋 Final config:', this.roleAccessConfig);
+      console.log('🔐 ========== LOAD ROLE CONFIG COMPLETE ==========\n');
+
+      return true;
+    } catch (error) {
+      console.error('❌ Error loading role config:', error);
+
+      // Fallback to default config
+      this.roleAccessConfig = {
+        admin: ['dashboard', 'sales', 'messaging', 'products', 'customers', 'users', 'settings'],
+        manager: ['dashboard', 'sales', 'messaging', 'products', 'customers', 'settings'],
+        user: ['dashboard', 'sales', 'messaging', 'settings']
+      };
+
+      return false;
+    }
+  }
+
+  // ========== EVENT LISTENERS ==========
+  attachGlobalListeners() {
+    console.log('🔗 Attaching global listeners...');
+
+    setTimeout(() => {
+      // Logout button
+      const logoutBtn = document.getElementById('logoutBtn');
+      if (logoutBtn) {
+        console.log('✅ Logout button found');
+        logoutBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.handleLogout();
+        });
+      }
+      setTimeout(() => {
+        const editCategoryForm = document.getElementById('editCategoryForm');
+        if (editCategoryForm && !editCategoryForm.dataset.listenerAttached) {
+          console.log('✅ Attaching edit category form listener globally');
+          editCategoryForm.addEventListener('submit', (e) => this.handleEditCategory(e));
+          editCategoryForm.dataset.listenerAttached = 'true';
+        }
+      }, 500);
+
+      // Customer form listener
+      setTimeout(() => {
+        const customerForm = document.getElementById('customerForm');
+        if (customerForm && !customerForm.dataset.listenerAttached) {
+          console.log('✅ Attaching customer form listener');
+          customerForm.addEventListener('submit', (e) => this.handleCustomerFormSubmit(e));
+          customerForm.dataset.listenerAttached = 'true';
+        }
+      }, 500);
+
+      // Create and Edit role forms
+      setTimeout(() => {
+        const createRoleForm = document.getElementById('createRoleForm');
+        if (createRoleForm && !createRoleForm.dataset.listenerAttached) {
+          console.log('✅ Attaching create role form listener');
+          createRoleForm.addEventListener('submit', (e) => this.handleCreateRoleSubmit(e));
+          createRoleForm.dataset.listenerAttached = 'true';
+        }
+
+        const editRoleForm = document.getElementById('editRoleForm');
+        if (editRoleForm && !editRoleForm.dataset.listenerAttached) {
+          console.log('✅ Attaching edit role form listener');
+          editRoleForm.addEventListener('submit', (e) => this.handleEditRoleSubmit(e));
+          editRoleForm.dataset.listenerAttached = 'true';
+        }
+      }, 500);
+
+      // New chat form
+      setTimeout(() => {
+        const newChatForm = document.getElementById('newChatForm');
+        if (newChatForm && !newChatForm.dataset.listenerAttached) {
+          console.log('✅ Attaching new chat form listener');
+          newChatForm.addEventListener('submit', (e) => this.handleNewChatSubmit(e));
+          newChatForm.dataset.listenerAttached = 'true';
+        }
+
+        const addParticipantForm = document.getElementById('addParticipantForm');
+        if (addParticipantForm && !addParticipantForm.dataset.listenerAttached) {
+          console.log('✅ Attaching add participant form listener');
+          addParticipantForm.addEventListener('submit', (e) => this.handleAddParticipantSubmit(e));
+          addParticipantForm.dataset.listenerAttached = 'true';
+        }
+      }, 500);
+
+      // Stock form (can be opened from anywhere)
+      setTimeout(() => {
+        const stockForm = document.getElementById('stockForm');
+        if (stockForm && !stockForm.dataset.listenerAttached) {
+          console.log('✅ Attaching stock form listener globally');
+          stockForm.addEventListener('submit', (e) => this.handleUpdateStock(e));
+          stockForm.dataset.listenerAttached = 'true';
+        }
+      }, 500);
+      // User form
+      setTimeout(() => {
+        const userForm = document.getElementById('userForm');
+        if (userForm && !userForm.dataset.listenerAttached) {
+          console.log('✅ Attaching user form listener globally');
+          userForm.addEventListener('submit', (e) => this.handleUserFormSubmit(e));
+          userForm.dataset.listenerAttached = 'true';
+        }
+      }, 500);
+
+
+
+      // Sidebar menu items
+      const menuItems = document.querySelectorAll('.sidebar-menu-item');
+      console.log(`📍 Found ${menuItems.length} menu items`);
+
+      menuItems.forEach((item) => {
+        const page = item.dataset.page;
+
+        item.addEventListener('click', (e) => {
+          e.preventDefault();
+          console.log(`🔗 Clicked: ${page}`);
+
+          if (!page) return;
+
+          // ⭐ CRITICAL: Check access with updated role config
+          const userRole = this.currentUser?.role || 'user';
+          const allowedPages = this.roleAccessConfig[userRole] || [];
+
+          console.log(`🔐 Checking access for ${userRole}:`, allowedPages);
+
+          if (!allowedPages.includes(page)) {
+            console.error(`❌ Access denied to ${page} for role ${userRole}`);
+            this.showConfirm(
+              '❌ Access Denied',
+              `You don't have permission to access ${page}.\n\nYour role: ${userRole.toUpperCase()}\n\nAllowed pages: ${allowedPages.join(', ')}`
+            );
+            return;
+          }
+
+          // Update active state
+          document.querySelectorAll('.sidebar-menu-item').forEach(m => m.classList.remove('active'));
+          item.classList.add('active');
+
+          // Change page
+          this.currentPage = page;
+          console.log(`📄 Navigating to: ${page}`);
+
+          // Update topbar title
+          const pageTitles = {
+            'dashboard': '📊 Dashboard',
+            'products': '📦 Item Management',
+            'customers': '👥 Customers',
+            'sales': '💰 Sales',
+            'messaging': '💬 Messaging',
+            'users': '👤 User Management',
+            'settings': '⚙️ Settings'
+          };
+          const topbarTitle = document.querySelector('.topbar-left h1');
+          if (topbarTitle) {
+            topbarTitle.textContent = pageTitles[page] || 'StockFlow';
+          }
+
+          // Render page content
+          const pageContent = document.getElementById('pageContent');
+          if (pageContent) {
+            pageContent.innerHTML = this.getPageContent();
+            this.attachPageSpecificListeners();
+          }
+        });
+      });
+
+      // Login form
+      const loginForm = document.getElementById('loginForm');
+      if (loginForm) {
+        console.log('✅ Login form found');
+        loginForm.addEventListener('submit', (e) => this.handleLogin(e));
+      }
+
+      // Attach page-specific listeners
+      this.attachPageSpecificListeners();
+    }, 100);
+  }
+
+  attachPageSpecificListeners() {
+    console.log('🔗 Attaching page-specific listeners for:', this.currentPage);
+
+    setTimeout(() => {
+      switch (this.currentPage) {
+        case 'dashboard':
+          if (window.dashboardModule) dashboardModule.attachListeners(this);
+          break;
+        case 'products':
+          if (window.productsPageModule) {
+            productsPageModule.attachListeners(this);
+
+            // Attach form listeners
+            setTimeout(() => {
+              const productForm = document.getElementById('productForm');
+              if (productForm) {
+                console.log('✅ Product form found');
+                productForm.addEventListener('submit', (e) => this.handleAddProduct(e));
+              }
+
+              const categoryForm = document.getElementById('categoryForm');
+              if (categoryForm) {
+                console.log('✅ Category form found');
+                categoryForm.addEventListener('submit', (e) => this.handleAddCategory(e));
+              }
+
+              const editCategoryForm = document.getElementById('editCategoryForm');
+              if (editCategoryForm) {
+                console.log('✅ Edit category form found');
+                editCategoryForm.addEventListener('submit', (e) => this.handleEditCategory(e));
+              }
+
+              const stockForm = document.getElementById('stockForm');
+              if (stockForm) {
+                console.log('✅ Stock form found');
+                stockForm.addEventListener('submit', (e) => this.handleUpdateStock(e));
+              }
+            }, 200);
+          }
+          break;
+        case 'categories':
+          if (window.categoriesPageModule) categoriesPageModule.attachListeners(this);
+          break;
+        case 'customers':
+          if (window.customersPageModule) customersPageModule.attachListeners(this);
+          break;
+        case 'sales':
+          if (window.salesPageModule) salesPageModule.attachListeners(this);
+          break;
+        case 'users':
+          if (window.usersPageModule) {
+            usersPageModule.attachListeners(this);
+
+            // Make sure edit/delete buttons work
+            setTimeout(() => {
+              console.log('✅ User management page listeners attached');
+            }, 200);
+          }
+          break;
+        case 'settings':
+          if (window.settingsPageModule) settingsPageModule.attachListeners(this);
+          break;
+      }
+    }, 100);
+  }
+
+
+}
+
+// ========== INITIALIZE APP ==========
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('📋 DOM Content Loaded - Starting StockFlow');
+  console.log('Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted):', new Date().toISOString().replace('T', ' ').substring(0, 19));
+  console.log("Current user's login:", 'itqatarfoam-hub');
+
+  window.app = new StockFlowApp();
+});

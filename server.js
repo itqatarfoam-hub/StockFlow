@@ -49,19 +49,19 @@ const requiredFiles = {
     'utils/logger.js'
   ],
   public: [
-    'public/index.html',
-    'public/style.css',
-    'public/js/main.js',
-    'public/js/utils.js',
-    'public/js/ui.js',
-    'public/js/auth.js',
-    'public/js/categories.js',
-    'public/js/products.js',
-    'public/js/customers.js',
-    'public/js/sales.js',
-    'public/js/users.js',
-    'public/js/settings.js',
-    'public/js/messaging.js'
+    'Public/index.html',
+    'Public/style.css',
+    'Public/js/main.js',
+    'Public/js/utils.js',
+    'Public/js/ui.js',
+    'Public/js/auth.js',
+    'Public/js/categories.js',
+    'Public/js/products.js',
+    'Public/js/customers.js',
+    'Public/js/sales.js',
+    'Public/js/users.js',
+    'Public/js/settings.js',
+    'Public/js/messaging.js'
   ]
 };
 
@@ -168,7 +168,7 @@ console.log('✅ Rate limiter configured (100 requests/minute)');
 
 // Static files - CSS
 app.get('/style.css', (req, res) => {
-  const cssPath = path.join(__dirname, 'public', 'style.css');
+  const cssPath = path.join(__dirname, 'Public', 'style.css');
   if (fs.existsSync(cssPath)) {
     res.setHeader('Content-Type', 'text/css; charset=utf-8');
     res.sendFile(cssPath);
@@ -179,7 +179,7 @@ app.get('/style.css', (req, res) => {
 
 // Static files - JS
 app.get('/js/:filename(*)', (req, res) => {
-  const jsPath = path.join(__dirname, 'public', 'js', req.params.filename);
+  const jsPath = path.join(__dirname, 'Public', 'js', req.params.filename);
   if (fs.existsSync(jsPath)) {
     res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
     res.sendFile(jsPath);
@@ -189,7 +189,7 @@ app.get('/js/:filename(*)', (req, res) => {
 });
 
 // Static files fallback
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'Public')));
 
 // ========== API ROUTES ==========
 
@@ -239,7 +239,7 @@ console.log('✅ API routes configured');
 
 // ========== SPA CATCH-ALL ==========
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname, 'Public', 'index.html'));
 });
 
 // ========== ERROR HANDLING ==========
@@ -251,7 +251,7 @@ async function startServer() {
     console.log('\n🚀 Starting StockFlow server...\n');
 
     // Create required directories
-    const dirs = ['logs', 'data', 'sessions', path.join('public', 'js', 'modules')];
+    const dirs = ['logs', 'data', 'sessions', path.join('Public', 'js', 'modules')];
 
     console.log('📁 Creating directories...');
     dirs.forEach(dir => {
